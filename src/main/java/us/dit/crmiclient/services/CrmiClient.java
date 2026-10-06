@@ -15,13 +15,13 @@ public interface CrmiClient {
      * Toma el diagrama (BPMN/DMN/CMMN) y sus metadatos, genera la Library y el PlanDefinition
      * cumpliendo el perfil crmi-publishable y los persiste en el repositorio.
      */
-    PublishPlanResponse publishWorkflow(PublishPlanRequest request);
+    PublishPlanResponse publishPlan(PublishPlanRequest request);
 
     /**
      * 2. Localización / Búsqueda de flujos en el catálogo.
      * Permite consultar el catálogo de procesos filtrando por título, estado, temática o editor.
      */
-    List<PlanSummary> searchWorkflows(PlanSearchFilter filter);
+    List<PlanSummary> searchPlan(PlanSearchFilter filter);
 
     /**
      * 3. Descarga de un paquete completo ($package).

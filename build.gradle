@@ -1,0 +1,36 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.1.1'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'us.dit'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+ext {
+    hapiFhirVersion = '8.12.0'
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	// HAPI FHIR Client Core & Estructuras R4
+    implementation "ca.uhn.hapi.fhir:hapi-fhir-base:${hapiFhirVersion}"
+    implementation "ca.uhn.hapi.fhir:hapi-fhir-client:${hapiFhirVersion}"
+    implementation "ca.uhn.hapi.fhir:hapi-fhir-structures-r4:${hapiFhirVersion}"
+
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

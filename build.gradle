@@ -28,7 +28,11 @@ dependencies {
     implementation "ca.uhn.hapi.fhir:hapi-fhir-base:${hapiFhirVersion}"
     implementation "ca.uhn.hapi.fhir:hapi-fhir-client:${hapiFhirVersion}"
     implementation "ca.uhn.hapi.fhir:hapi-fhir-structures-r4:${hapiFhirVersion}"
-
+	//Para editar modelos (flowable)
+	// Source: https://mvnrepository.com/artifact/org.flowable/flowable-bpmn-model
+	implementation 'org.flowable:flowable-bpmn-model:8.0.0'
+	// Source: https://mvnrepository.com/artifact/org.flowable/flowable-bpmn-converter
+	implementation 'org.flowable:flowable-bpmn-converter:8.0.0'
 }
 
 tasks.named('test') {

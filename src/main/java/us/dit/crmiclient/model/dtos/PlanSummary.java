@@ -8,5 +8,6 @@ public record PlanSummary(
     String status,
     String publisher,
     String description,
+    String purpose,
     String lastUpdated
 ){}

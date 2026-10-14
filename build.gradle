@@ -14,13 +14,19 @@ java {
 }
 
 repositories {
+	mavenLocal()
 	mavenCentral()
 }
 ext {
     hapiFhirVersion = '8.12.0'
 }
+// msbpmn usa javax.xml.bind: evita que el BOM de Spring Boot suba jaxb-runtime a 4.x (jakarta)
+ext['glassfish-jaxb.version'] = '2.3.9'
 
 dependencies {
+ 	implementation(group: 'science.aist.msbpmn', name: 'transformation', version: '1.0-SNAPSHOT') {
+        exclude group: 'ca.uhn.hapi.fhir', module: 'hapi-fhir-structures-r4'
+    }
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

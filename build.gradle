@@ -37,6 +37,8 @@ dependencies {
 	implementation 'org.flowable:flowable-bpmn-model:8.0.0'
 	// Source: https://mvnrepository.com/artifact/org.flowable/flowable-bpmn-converter
 	implementation 'org.flowable:flowable-bpmn-converter:8.0.0'
+	// Para generar automáticamente el diagrama (BPMNDI) del proceso
+	implementation 'org.flowable:flowable-bpmn-layout:8.0.0'
 }
 
 tasks.named('test') {

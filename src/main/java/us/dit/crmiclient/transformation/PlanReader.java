@@ -5,4 +5,5 @@ public interface PlanReader {
     String getId();
     String getStartEvent(); 
     String getEndEvent();
+    String getDocumentation(); // Nuevo método para obtener la documentación del plan
 }

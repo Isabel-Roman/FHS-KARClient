@@ -12,4 +12,6 @@ public interface BpmnWriter {
     void setId(String id);
     void setStartEvent(String startEvent);
     void setEndEvent(String endEvent);
+    void setDocumentation(String documentation); // Nuevo método para establecer la documentación del proceso
+
 }

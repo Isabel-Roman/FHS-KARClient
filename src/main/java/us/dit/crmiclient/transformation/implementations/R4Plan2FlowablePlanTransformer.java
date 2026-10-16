@@ -23,11 +23,17 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
         // La lógica de transformación se descompone en pasos
         mapName();
         mapId();
+        mapDocumentation();
         mapStart();
         mapEnd();
 
         logger.info("Transformación completada para el plan {}", planReader.getId());
         return processWriter.getModel();
+    }
+    private void mapDocumentation(){
+        // Implementar la lógica para mapear la documentación del plan al proceso BPMN
+        String documentation = planReader.getDocumentation(); // Placeholder implementation
+        processWriter.setDocumentation(documentation);
     }
     private void mapName(){
         String planName = planReader.getName();

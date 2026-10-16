@@ -63,6 +63,21 @@ class FlowableProcessWriterTest {
     }
 
     @Test
+    void addDiagramGeneratesShapesForFlowElements() throws Exception {
+        writer.setId("proceso");
+        writer.setStartEvent("inicio");
+        writer.setEndEvent("fin");
+      
+
+        String xml = writer.getModel();
+        assertTrue(xml.contains("BPMNDiagram"));
+
+        BpmnModel model = parse(xml);
+        assertNotNull(model.getGraphicInfo("inicio"));
+        assertNotNull(model.getGraphicInfo("fin"));
+    }
+
+    @Test
     void getModelKeepsNonAsciiCharacters() throws Exception {
         writer.setName("Detección de infección");
 

@@ -4,6 +4,7 @@ import us.dit.crmiclient.transformation.BpmnWriter;
 
 import java.nio.charset.StandardCharsets;
 
+import org.flowable.bpmn.BpmnAutoLayout;
 import org.flowable.bpmn.converter.BpmnXMLConverter;
 import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.bpmn.model.EndEvent;
@@ -21,16 +22,23 @@ public class FlowableProcessWriter implements BpmnWriter {
 
     public FlowableProcessWriter() {
         this.model = new BpmnModel();
-        this.process = new Process();
-        //this.process.setId("process");
+        this.process = new Process();   
         this.process.setExecutable(true);
+        
         this.model.addProcess(this.process);
+    
         logger.debug("Creado proceso BPMN vacío");
+    }
+    @Override 
+    public void setDocumentation(String documentation) {
+        logger.debug("Documentación del proceso: {}", documentation);
+        this.process.setDocumentation(documentation);
     }
 
     @Override 
     public String getModel() {
         logger.debug("Convirtiendo a XML el proceso {}", process.getId());
+        setDiagram(); // Genera el diagrama antes de convertir a XML
         byte[] xml = new BpmnXMLConverter().convertToXML(model);
         return new String(xml, StandardCharsets.UTF_8);
     }
@@ -63,5 +71,12 @@ public class FlowableProcessWriter implements BpmnWriter {
         end.setId(endEvent);
         logger.debug("Añadido evento de fin {}", endEvent);
         process.addFlowElement(end);
+    }
+
+
+
+    private void setDiagram() {
+        logger.debug("Generando diagrama del proceso {}", process.getId());
+        new BpmnAutoLayout(model).execute();
     }
 }

@@ -17,6 +17,29 @@ public class R4PlanReader implements PlanReader {
                 .parseResource(PlanDefinition.class, rawPlanDefinition);
         logger.debug("PlanDefinition leído: id={}, name={}", plan.getId(), plan.getName());
     }
+    @Override 
+    public String getDocumentation() {        
+        String documentation="";
+        String publisher = plan.getPublisher();
+        if (publisher != null && !publisher.isEmpty()) {
+            documentation += "Publisher: " + publisher + " ";
+        }
+        String description = plan.getDescription();
+      
+        if (description != null && !description.isEmpty()) {
+            documentation += "Description: " + description + " ";
+        }
+        String usage = plan.getUsage();
+        if (usage != null && !usage.isEmpty()) {
+            documentation += "Usage: " + usage + " ";
+        }
+        String purpose = plan.getPurpose();
+        if (purpose != null && !purpose.isEmpty()) {
+            documentation += "Purpose: " + purpose+ " ";
+        }
+        // Implement logic to extract the documentation from the planDefinition
+        return documentation; // Placeholder implementation
+    }
 
     @Override
     public String getName() {

@@ -16,23 +16,21 @@ import org.junit.jupiter.api.Test;
 
 class R4Plan2FlowablePlanTransformerTest {
 
-    private static final String SIMPLE_PLAN = """
+
+
+    @Test
+    void simplePlan2Bpmn() throws Exception {
+        String SIMPLE_PLAN = """
             {
               "resourceType": "PlanDefinition",
               "id": "plan-sencillo",
               "name": "PlanSencillo",
-              "status": "draft"
-            }
+              "status": "draft",
+              "purpose": "Este es un plan sencillo para pruebas.",
+              "description": "Este plan tiene solo evento de inicio y de fin.",
+              "usage": "Usar solo en entorno de tests."
+                          }
             """;
-
-    private BpmnModel parse(String xml) throws Exception {
-        XMLStreamReader reader = XMLInputFactory.newInstance()
-                .createXMLStreamReader(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
-        return new BpmnXMLConverter().convertToBpmnModel(reader);
-    }
-
-    @Test
-    void plan2BpmnMapsPlanNameToProcessName() throws Exception {
         String xml = new R4Plan2FlowablePlanTransformer().Plan2Bpmn(SIMPLE_PLAN);
         System.out.println(xml); // Imprime el XML generado para depuración
 
@@ -41,5 +39,13 @@ class R4Plan2FlowablePlanTransformerTest {
         assertEquals(1, model.getProcesses().size());
         Process process = model.getMainProcess();
         assertEquals("PlanSencillo", process.getName());
+        assertEquals("plan-sencillo", process.getId());
+    }
+
+    
+    private BpmnModel parse(String xml) throws Exception {
+        XMLStreamReader reader = XMLInputFactory.newInstance()
+                .createXMLStreamReader(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        return new BpmnXMLConverter().convertToBpmnModel(reader);
     }
 }

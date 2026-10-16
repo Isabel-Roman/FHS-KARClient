@@ -24,9 +24,7 @@ ext {
 ext['glassfish-jaxb.version'] = '2.3.9'
 
 dependencies {
- 	implementation(group: 'science.aist.msbpmn', name: 'transformation', version: '1.0-SNAPSHOT') {
-        exclude group: 'ca.uhn.hapi.fhir', module: 'hapi-fhir-structures-r4'
-    }
+
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

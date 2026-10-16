@@ -8,14 +8,14 @@ import java.util.List;
 
 import us.dit.crmiclient.model.dtos.PlanSearchFilter;
 
-public interface CrmiClient {
+public interface CrmiFacade {
 
     /**
      * 1. Publicación de un artefacto BPM+/CRMI.
-     * Toma el diagrama (BPMN/DMN/CMMN) y sus metadatos, genera la Library y el PlanDefinition
+     * Toma el PlanDefinition, genera la Library, la publica en crmi y la agrega al PlanDefinition, publica el plandefinition
      * cumpliendo el perfil crmi-publishable y los persiste en el repositorio.
      */
-    PublishPlanResponse publishPlan(PublishPlanRequest request);
+    void publishPlan(String rawPlanDefinition);
 
     /**
      * 2. Localización / Búsqueda de flujos en el catálogo.

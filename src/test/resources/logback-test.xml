@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Trazas DEBUG solo para el código del proyecto -->
+    <logger name="us.dit.crmiclient" level="DEBUG"/>
+
+    <!-- Resto de librerías (HAPI, Flowable, Spring...) en INFO para no saturar -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

@@ -9,4 +9,7 @@ public interface BpmnWriter {
      */
     String getModel();
     void setName(String name);
+    void setId(String id);
+    void setStartEvent(String startEvent);
+    void setEndEvent(String endEvent);
 }

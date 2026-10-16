@@ -68,14 +68,19 @@ public class R4FlowableCrmiFacade implements CrmiFacade{
         String libraryCanonical = publishLibrary(library);
         logger.debug("URL canónica de la Library: {}", libraryCanonical);
         plan.addLibrary(libraryCanonical);
-        publishPlan(plan);
-        // TODO publicar el PlanDefinition
+        String planId=publishPlan(plan);       
+        logger.debug("ID del PlanDefinition publicado: {}", planId);
     }
-    private void publishPlan(PlanDefinition plan) {
+    /**
+     * Publica un plandefinition en el servidor crmi
+     * @param plan
+     */
+    private String publishPlan(PlanDefinition plan) {
         MethodOutcome outcome = fhirClient.create()
                 .resource(plan)
                 .execute();
         logger.info("PlanDefinition publicado: {}", outcome.getId().getValue());
+        return outcome.getId().getIdPart();
     }
 
     /**
@@ -100,7 +105,9 @@ public class R4FlowableCrmiFacade implements CrmiFacade{
      * Los metadatos (versión, nombre...) se toman del propio PlanDefinition.
      */
     private Library createLibrary(PlanDefinition plan, String bpmnModel) {
-        String id = plan.getIdElement().getIdPart();
+        // Un plan nuevo puede no traer id: se usa el name, como en R4PlanReader.getId()
+        String id = plan.getIdElement().hasIdPart() ? plan.getIdElement().getIdPart()
+                : plan.hasName() ? plan.getName() : "plan";
         logger.debug("Creando Library para el plan {}", id);
 
         Library library = new Library();

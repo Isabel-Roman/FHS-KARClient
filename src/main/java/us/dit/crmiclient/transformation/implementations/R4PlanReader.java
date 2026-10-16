@@ -2,6 +2,8 @@ package us.dit.crmiclient.transformation.implementations;
 
 import us.dit.crmiclient.transformation.PlanReader;
 
+import java.util.UUID;
+
 import ca.uhn.fhir.context.FhirContext;
 import org.hl7.fhir.r4.model.PlanDefinition;
 import org.slf4j.Logger;
@@ -10,6 +12,7 @@ import org.slf4j.LoggerFactory;
 public class R4PlanReader implements PlanReader {
     private static final Logger logger = LoggerFactory.getLogger(R4PlanReader.class);
     private final PlanDefinition plan;
+    private String generatedId;
 
     public R4PlanReader(String rawPlanDefinition) {
         this.plan = FhirContext.forR4()
@@ -47,19 +50,37 @@ public class R4PlanReader implements PlanReader {
         return plan.getName(); // Placeholder implementation
     }
 
+    /**
+     * Id del proceso: el id del PlanDefinition; si no tiene (p.ej. un plan nuevo que aún no está
+     * en el servidor) se usa su name, y si tampoco tiene name se genera uno.
+     * El id generado se guarda para que llamadas sucesivas devuelvan siempre el mismo.
+     */
     @Override
     public String getId() {
-        String id = plan.getId();
-        String prefijo = "PlanDefinition/";
-
-        // Si empieza por el prefijo, recortamos la longitud del prefijo; si no, dejamos
-        // el texto original
-        String resultado = id.startsWith(prefijo)
-                ? id.substring(prefijo.length())
-                : id;
+        if (generatedId != null) {
+            return generatedId;
+        }
+        String resultado;
+        if (plan.getIdElement().hasIdPart()) {
+            // getIdPart descarta el prefijo "PlanDefinition/" y la versión
+            resultado = plan.getIdElement().getIdPart();
+        } else if (plan.hasName()) {
+            resultado = toBpmnId(plan.getName());
+        } else {
+            generatedId = "plan-" + UUID.randomUUID();
+            resultado = generatedId;
+        }
         logger.debug("Obteniendo ID del PlanDefinition: {}", resultado);
-        // Implement logic to extract the ID from the planDefinition
-        return resultado; // Placeholder implementation
+        return resultado;
+    }
+
+    /**
+     * Los ids BPMN son NCName de XML: deben empezar por letra o '_' y no admiten espacios
+     * ni la mayoría de símbolos. Los caracteres no válidos se sustituyen por '_'.
+     */
+    private static String toBpmnId(String name) {
+        String id = name.trim().replaceAll("[^A-Za-z0-9_.-]", "_");
+        return id.matches("^[A-Za-z_].*") ? id : "_" + id;
     }
 
     @Override

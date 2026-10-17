@@ -1,11 +1,17 @@
 package us.dit.crmiclient.transformation.implementations;
 
+import us.dit.crmiclient.model.ActionWrapper;
 import us.dit.crmiclient.transformation.PlanReader;
 
+import java.util.List;
 import java.util.UUID;
 
 import ca.uhn.fhir.context.FhirContext;
 import org.hl7.fhir.r4.model.PlanDefinition;
+import org.hl7.fhir.r4.model.PlanDefinition.ActionRelationshipType;
+import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionComponent;
+import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionRelatedActionComponent;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,12 +19,64 @@ public class R4PlanReader implements PlanReader {
     private static final Logger logger = LoggerFactory.getLogger(R4PlanReader.class);
     private final PlanDefinition plan;
     private String generatedId;
+   
+    private List<ActionWrapper<PlanDefinitionActionComponent>> actions;
 
     public R4PlanReader(String rawPlanDefinition) {
         this.plan = FhirContext.forR4()
                 .newJsonParser()
                 .parseResource(PlanDefinition.class, rawPlanDefinition);
+        
+        createActions();
+        actionsReasoning();
         logger.debug("PlanDefinition leído: id={}, name={}", plan.getId(), plan.getName());
+    }
+    private void createActions() {
+        actions=new java.util.ArrayList<>();
+        for (PlanDefinitionActionComponent action : plan.getAction()) {
+            ActionWrapper<PlanDefinitionActionComponent> wrapper = new ActionWrapper<>(action);
+            wrapper.setId(action.getId());
+           
+            actions.add(wrapper);
+        }
+    }
+    /**
+     * Implementa razonamiento sobre las acciones del plan, para completar la información de la lista de ActionWrappers con los metadatos necesarios para la gestión de las acciones y su manipulación en una estructura de lista enlazada.
+     */
+    private void actionsReasoning() {
+        for(ActionWrapper<PlanDefinitionActionComponent> wrapper: actions) {
+            PlanDefinitionActionComponent action = wrapper.getAction();
+            List<PlanDefinitionActionRelatedActionComponent> relatedActions = action.getRelatedAction();
+            for(PlanDefinitionActionRelatedActionComponent relatedAction : relatedActions) {
+                String relatedActionId = relatedAction.getActionId();
+                ActionRelationshipType relationship = relatedAction.getRelationship();
+                switch (relationship) {
+                    case BEFORE:
+                        // Implement logic for BEFORE relationship
+                        break;
+                    case AFTER:
+                        // Implement logic for AFTER relationship
+                        break;
+                    case CONCURRENT:
+                        // Implement logic for CONCURRENT relationship
+                        break;
+                    default:
+                        logger.warn("Unknown relationship type: {}", relationship);
+                }
+                // Aquí se puede implementar la lógica para establecer los metadatos necesarios
+                // Por ejemplo, buscar el ActionWrapper correspondiente al relatedActionId y establecerlo como siguiente o anterior en la lista enlazada
+            }
+      
+            // Aquí se puede implementar la lógica para establecer los metadatos necesarios
+            // Por ejemplo, establecer el siguiente y anterior en la lista enlazada
+            int index = actions.indexOf(wrapper);
+            if (index > 0) {
+                wrapper.setPrevious(actions.get(index - 1));
+            }
+            if (index < actions.size() - 1) {
+                wrapper.setNext(actions.get(index + 1));
+            }
+        }
     }
     @Override 
     public String getDocumentation() {        

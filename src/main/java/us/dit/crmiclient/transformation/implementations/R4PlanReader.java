@@ -28,6 +28,7 @@ public class R4PlanReader implements PlanReader {
                 .parseResource(PlanDefinition.class, rawPlanDefinition);
         
         createActions();
+        actionsOrder();
         actionsReasoning();
         logger.debug("PlanDefinition leído: id={}, name={}", plan.getId(), plan.getName());
     }
@@ -41,9 +42,16 @@ public class R4PlanReader implements PlanReader {
         }
     }
     /**
-     * Implementa razonamiento sobre las acciones del plan, para completar la información de la lista de ActionWrappers con los metadatos necesarios para la gestión de las acciones y su manipulación en una estructura de lista enlazada.
+     * Rellena metadatos de los wrappers
      */
     private void actionsReasoning() {
+        
+    }
+    /**
+     * Implementa ordenamiento de las acciones del plan, para completar la información de la lista de ActionWrappers con los metadatos necesarios para la gestión de las acciones y su manipulación en una estructura de lista enlazada.
+     */
+    private void actionsOrder() {
+        //Busco las relaciones antes y después de cada acción y añado las relaciones en los wrappers correspondientes
         for(ActionWrapper<PlanDefinitionActionComponent> wrapper: actions) {
             PlanDefinitionActionComponent action = wrapper.getAction();
             List<PlanDefinitionActionRelatedActionComponent> relatedActions = action.getRelatedAction();
@@ -53,9 +61,23 @@ public class R4PlanReader implements PlanReader {
                 switch (relationship) {
                     case BEFORE:
                         // Implement logic for BEFORE relationship
+                        actions.stream()
+                                .filter(a -> a.getId().equals(relatedActionId))
+                                .findFirst()
+                                .ifPresent(a -> {
+                                    wrapper.setNext(a);
+                                    a.setPrevious(wrapper);
+                                });
                         break;
                     case AFTER:
                         // Implement logic for AFTER relationship
+                        actions.stream()
+                                .filter(a -> a.getId().equals(relatedActionId))
+                                .findFirst()
+                                .ifPresent(a -> {
+                                    wrapper.setPrevious(a);
+                                    a.setNext(wrapper);
+                                });
                         break;
                     case CONCURRENT:
                         // Implement logic for CONCURRENT relationship
@@ -63,19 +85,9 @@ public class R4PlanReader implements PlanReader {
                     default:
                         logger.warn("Unknown relationship type: {}", relationship);
                 }
-                // Aquí se puede implementar la lógica para establecer los metadatos necesarios
-                // Por ejemplo, buscar el ActionWrapper correspondiente al relatedActionId y establecerlo como siguiente o anterior en la lista enlazada
-            }
-      
-            // Aquí se puede implementar la lógica para establecer los metadatos necesarios
-            // Por ejemplo, establecer el siguiente y anterior en la lista enlazada
-            int index = actions.indexOf(wrapper);
-            if (index > 0) {
-                wrapper.setPrevious(actions.get(index - 1));
-            }
-            if (index < actions.size() - 1) {
-                wrapper.setNext(actions.get(index + 1));
-            }
+                
+            }     
+           
         }
     }
     @Override 

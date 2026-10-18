@@ -27,54 +27,79 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Lee un PlanDefinition FHIR R4 y construye los {@link ActionWrapper} de sus acciones.
+ * Lee un PlanDefinition FHIR R4 y construye los {@link ActionWrapper} de sus
+ * acciones.
  *
  * <h2>Identificadores de las acciones</h2>
  * Cada acción maneja dos identificadores distintos, que no deben confundirse:
  *
  * <h3>Id FHIR</h3>
  * <ul>
- * <li><b>Semántica:</b> identificador de la acción dentro del PlanDefinition. Es la referencia
+ * <li><b>Semántica:</b> identificador de la acción dentro del PlanDefinition.
+ * Es la referencia
  * que usan unas acciones para relacionarse con otras.</li>
  * <li><b>Origen:</b> el atributo {@code id} del elemento action en el recurso
- * ({@code action.getId()}). Lo escribe el autor del plan, es opcional y no tiene restricción de
- * formato más allá de la de FHIR (puede empezar por dígito, contener puntos o guiones, etc.).</li>
- * <li><b>Uso:</b> resolver los {@code relatedAction.actionId}. Es la clave del índice
- * {@code actionsByFhirId}. Debe ser único en el plan: si se repite, las referencias serían
- * ambiguas y el plan se rechaza. Una acción sin id FHIR no puede ser referenciada por otras.
- * No se guarda en el wrapper: se consulta con {@code wrapper.getAction().getId()}.</li>
+ * ({@code action.getId()}). Lo escribe el autor del plan, es opcional y no
+ * tiene restricción de
+ * formato más allá de la de FHIR (puede empezar por dígito, contener puntos o
+ * guiones, etc.).</li>
+ * <li><b>Uso:</b> resolver los {@code relatedAction.actionId}. Es la clave del
+ * índice
+ * {@code actionsByFhirId}. Debe ser único en el plan: si se repite, las
+ * referencias serían
+ * ambiguas y el plan se rechaza. Una acción sin id FHIR no puede ser
+ * referenciada por otras.
+ * No se guarda en el wrapper: se consulta con
+ * {@code wrapper.getAction().getId()}.</li>
  * </ul>
  *
  * <h3>Id BPMN</h3>
  * <ul>
- * <li><b>Semántica:</b> identificador del elemento BPMN (tarea) que representará la acción en el
+ * <li><b>Semántica:</b> identificador del elemento BPMN (tarea) que
+ * representará la acción en el
  * proceso generado.</li>
- * <li><b>Origen:</b> se calcula a partir del id FHIR con {@link #toBpmnId(String)}, porque los ids
- * BPMN son NCName de XML (deben empezar por letra o '_' y no admiten espacios ni la mayoría de
- * símbolos). Si la acción no tiene id FHIR se genera {@code action_N}, con N su posición en el
- * plan. Si el saneado hace coincidir dos ids, se añade un sufijo {@code _2}, {@code _3}...</li>
- * <li><b>Uso:</b> es el que guarda {@code wrapper.getId()}, y es el que debe usarse al construir el
- * BPMN (ids de tareas, sequence flows, gateways). Es único dentro del proceso.</li>
+ * <li><b>Origen:</b> se calcula a partir del id FHIR con
+ * {@link #toBpmnId(String)}, porque los ids
+ * BPMN son NCName de XML (deben empezar por letra o '_' y no admiten espacios
+ * ni la mayoría de
+ * símbolos). Si la acción no tiene id FHIR se genera {@code action_N}, con N su
+ * posición en el
+ * plan. Si el saneado hace coincidir dos ids, se añade un sufijo {@code _2},
+ * {@code _3}...</li>
+ * <li><b>Uso:</b> es el que guarda {@code wrapper.getId()}, y es el que debe
+ * usarse al construir el
+ * BPMN (ids de tareas, sequence flows, gateways). Es único dentro del
+ * proceso.</li>
  * </ul>
  *
- * En los casos habituales ambos coinciden; solo difieren cuando el id FHIR no es un NCName válido,
+ * En los casos habituales ambos coinciden; solo difieren cuando el id FHIR no
+ * es un NCName válido,
  * cuando el saneado provoca colisiones o cuando la acción no tiene id FHIR.
  * <p>
- * El id del propio proceso ({@link #getId()}) sigue la misma idea: se obtiene del id del
+ * El id del propio proceso ({@link #getId()}) sigue la misma idea: se obtiene
+ * del id del
  * PlanDefinition (o de su name) y se sanea con {@link #toBpmnId(String)}.
  */
 public class R4PlanReader implements PlanReader {
     private static final Logger logger = LoggerFactory.getLogger(R4PlanReader.class);
     private final PlanDefinition plan;
     private String generatedId;
-   
+
     /** LinkedHashSet para conservar el orden de las acciones en el documento */
     private Set<ActionWrapper<PlanDefinitionActionComponent>> actions;
-    /** Índice de las acciones por su id FHIR (el que usan los relatedAction.actionId) */
+    /**
+     * Índice de las acciones por su id FHIR (el que usan los
+     * relatedAction.actionId)
+     */
     private Map<String, ActionWrapper<PlanDefinitionActionComponent>> actionsByFhirId;
-    /** Split tras el evento de inicio hacia las primeras acciones; null si no hace falta */
+    /**
+     * Split tras el evento de inicio hacia las primeras acciones; null si no hace
+     * falta
+     */
     private Gateway startGateway;
-    /** Join de las últimas acciones antes del evento de fin; null si no hace falta */
+    /**
+     * Join de las últimas acciones antes del evento de fin; null si no hace falta
+     */
     private Gateway endGateway;
 
     public R4PlanReader(String rawPlanDefinition) {
@@ -90,11 +115,16 @@ public class R4PlanReader implements PlanReader {
 
     /**
      * Crea un wrapper por acción y los indexa por su id FHIR.
-     * El id del wrapper es el id BPMN: el id FHIR saneado como NCName y único en el proceso.
-     * Las acciones sin id reciben uno generado, pero no pueden ser referenciadas por otras.
-     * Un id FHIR duplicado hace ambiguas las referencias, así que el plan se rechaza.
-     * Restricción del proyecto: todas las acciones son de primer nivel, el orden se expresa solo
-     * con relatedAction. Un plan con acciones anidadas se rechaza para no ignorarlas en silencio.
+     * El id del wrapper es el id BPMN: el id FHIR saneado como NCName y único en el
+     * proceso.
+     * Las acciones sin id reciben uno generado, pero no pueden ser referenciadas
+     * por otras.
+     * Un id FHIR duplicado hace ambiguas las referencias, así que el plan se
+     * rechaza.
+     * Restricción del proyecto: todas las acciones son de primer nivel, el orden se
+     * expresa solo
+     * con relatedAction. Un plan con acciones anidadas se rechaza para no
+     * ignorarlas en silencio.
      */
     private void createActions() {
         actions = new LinkedHashSet<>();
@@ -105,7 +135,8 @@ public class R4PlanReader implements PlanReader {
             index++;
             String fhirId = action.getId();
             if (action.hasAction()) {
-                throw new InvalidPlanDefinitionException("La acción " + index + " (id=" + fhirId + ", '" + action.getTitle()
+                throw new InvalidPlanDefinitionException("La acción " + index + " (id=" + fhirId + ", '"
+                        + action.getTitle()
                         + "') tiene acciones anidadas, no soportadas: todas las acciones deben ser de primer nivel");
             }
             ActionWrapper<PlanDefinitionActionComponent> wrapper = new ActionWrapper<>(action);
@@ -120,7 +151,8 @@ public class R4PlanReader implements PlanReader {
                 actionsByFhirId.put(fhirId, wrapper);
                 bpmnId = toBpmnId(fhirId);
             }
-            // El saneado puede hacer coincidir ids distintos ("a b" y "a_b"), o con uno generado
+            // El saneado puede hacer coincidir ids distintos ("a b" y "a_b"), o con uno
+            // generado
             String uniqueId = bpmnId;
             for (int suffix = 2; !bpmnIds.add(uniqueId); suffix++) {
                 uniqueId = bpmnId + "_" + suffix;
@@ -132,26 +164,35 @@ public class R4PlanReader implements PlanReader {
             actions.add(wrapper);
         }
     }
+
     /**
-     * Rellena los gateways en los ActionWrappers correspondientes, según la información de las acciones del plan.
-     * Por ahora solo se generan gateways AND y OR (no XOR: no se puede saber si las condiciones de
+     * Rellena los gateways en los ActionWrappers correspondientes, según la
+     * información de las acciones del plan.
+     * Por ahora solo se generan gateways AND y OR (no XOR: no se puede saber si las
+     * condiciones de
      * las ramas son excluyentes, y OR es correcto en ambos casos).
      * <ul>
-     * <li>Split (outGateway): si la acción tiene varias siguientes, o alguna siguiente tiene
-     * condición applicability. OR si alguna siguiente es condicional, AND si no.</li>
-     * <li>Join (inGateway): si la acción tiene varias anteriores. OR si alguna rama de entrada puede
+     * <li>Split (outGateway): si la acción tiene varias siguientes, o alguna
+     * siguiente tiene
+     * condición applicability. OR si alguna siguiente es condicional, AND si
+     * no.</li>
+     * <li>Join (inGateway): si la acción tiene varias anteriores. OR si alguna rama
+     * de entrada puede
      * no llegar (un AND esperaría para siempre esa rama), AND si no.</li>
-     * <li>Las primeras y últimas acciones del plan no tienen un wrapper anterior o siguiente donde
-     * colgar el gateway: el split tras el evento de inicio y el join antes del de fin se guardan
+     * <li>Las primeras y últimas acciones del plan no tienen un wrapper anterior o
+     * siguiente donde
+     * colgar el gateway: el split tras el evento de inicio y el join antes del de
+     * fin se guardan
      * en el propio reader (startGateway y endGateway).</li>
      * </ul>
      */
     private void findGateways() {
-        //Conjunto de acciones que podrían no ejecutarse, porque tienen condición o solo se llega a ellas a través de acciones con condición
+        // Conjunto de acciones que podrían no ejecutarse, porque tienen condición o
+        // solo se llega a ellas a través de acciones con condición
         Set<ActionWrapper<PlanDefinitionActionComponent>> mayNotRun = findActionsThatMayNotRun();
-        //Lista de acciones que no tienen anteriores para el gateway de inicio
+        // Lista de acciones que no tienen anteriores para el gateway de inicio
         List<ActionWrapper<PlanDefinitionActionComponent>> firsts = new ArrayList<>();
-        //Lista de acciones que no tienen siguientes para el gateway de fin
+        // Lista de acciones que no tienen siguientes para el gateway de fin
         List<ActionWrapper<PlanDefinitionActionComponent>> lasts = new ArrayList<>();
         for (ActionWrapper<PlanDefinitionActionComponent> wrapper : actions) {
             if (wrapper.isFirst()) {
@@ -160,59 +201,77 @@ public class R4PlanReader implements PlanReader {
             if (wrapper.isLast()) {
                 lasts.add(wrapper);
             }
-            // Si la acción tiene varias siguientes, o alguna siguiente tiene condición applicability, necesita un split
+            // Si la acción no es la última, y tiene varias siguientes, o alguna siguiente
+            // tiene condición applicability, necesita un split
             if (!wrapper.isLast()) {
                 Gateway.GatewayType outGatewayType = solveSplitType(wrapper.getNext());
                 if (outGatewayType != null) {
                     wrapper.setOutGateway(new Gateway("gw_out_" + wrapper.getId(), outGatewayType));
                 }
             }
-            //Las acciones que tengan más de una previa necesitan un join. Si alguna de las acciones previas puede no ejecutarse, el join debe ser OR, si no, AND
+            // Si la acción no es la primera y tiene más de una anterior, necesita un join.
+            // Si alguna de las acciones anteriores puede no ejecutarse, el join debe ser
+            // OR, si no, AND
             if (!wrapper.isFirst() && wrapper.getPrevious().size() > 1) {
-                wrapper.setInGateway(new Gateway("gw_in_" + wrapper.getId(), solveJoinType(wrapper.getPrevious(), mayNotRun)));
+                wrapper.setInGateway(
+                        new Gateway("gw_in_" + wrapper.getId(), solveJoinType(wrapper.getPrevious(), mayNotRun)));
             }
         }
+        // Analizo el split de entrada mirando las primeras acciones. Las primeras acciones son las de salida del evento de inicio...
         Gateway.GatewayType startSplit = solveSplitType(firsts);
         startGateway = startSplit == null ? null : new Gateway("gw_start", startSplit);
+        // Analizo el join de salida mirando las últimas acciones. Las últimas acciones son las de entrada para el evento de fin...
         endGateway = lasts.size() > 1 ? new Gateway("gw_end", solveJoinType(lasts, mayNotRun)) : null;
         logger.debug("Gateways del plan: inicio={}, fin={}",
                 startGateway == null ? "-" : startGateway.getType(), endGateway == null ? "-" : endGateway.getType());
     }
 
     /**
-     * Tipo del gateway de salida hacia las acciones dadas, o null si no hace falta gateway (una única siguiente y sin condición).
+     * Tipo del gateway de salida hacia las acciones dadas, o null si no hace falta
+     * gateway (una única siguiente y sin condición).
      */
-    private static Gateway.GatewayType solveSplitType(Collection<ActionWrapper<PlanDefinitionActionComponent>> targets) {
+    private static Gateway.GatewayType solveSplitType(
+            Collection<ActionWrapper<PlanDefinitionActionComponent>> targets) {
         Gateway.GatewayType type = null;
         boolean anyConditional = targets.stream().anyMatch(t -> hasApplicabilityCondition(t.getAction()));
         if (anyConditional) {
             type = Gateway.GatewayType.OR;
-        }else if (targets.size() > 1) {
+        } else if (targets.size() > 1) {
             type = Gateway.GatewayType.AND;
         }
-        return type;        
+        return type;
     }
 
     /**
-     * Tipo del gateway de entrada (join) que reúne las ramas que llegan desde las acciones dadas.
+     * Tipo del gateway de entrada (join) que reúne las ramas que llegan desde las
+     * acciones dadas.
      * <p>
-     * Un join AND espera a que lleguen <b>todas</b> sus ramas de entrada. Si alguna rama no se
-     * ejecuta (porque su condición applicability no se cumple), nunca llega, y el AND se queda
-     * esperando para siempre: el proceso se bloquea. Un join OR, en cambio, espera solo a las ramas
-     * que de verdad están en ejecución (el motor comprueba cuáles pueden aún alcanzarlo).
+     * Un join AND espera a que lleguen <b>todas</b> sus ramas de entrada. Si alguna
+     * rama no se
+     * ejecuta (porque su condición applicability no se cumple), nunca llega, y el
+     * AND se queda
+     * esperando para siempre: el proceso se bloquea. Un join OR, en cambio, espera
+     * solo a las ramas
+     * que de verdad están en ejecución (el motor comprueba cuáles pueden aún
+     * alcanzarlo).
      * <p>
      * Por eso:
      * <ul>
-     * <li>OR si alguna de las acciones de origen está en {@code mayNotRun}, es decir, puede no
-     * ejecutarse (tiene condición o solo se llega a ella a través de acciones con condición;
+     * <li>OR si alguna de las acciones de origen está en {@code mayNotRun}, es
+     * decir, puede no
+     * ejecutarse (tiene condición o solo se llega a ella a través de acciones con
+     * condición;
      * ver {@link #findActionsThatMayNotRun()}).</li>
      * <li>AND si todas se ejecutan siempre: llegarán todas las ramas.</li>
      * </ul>
-     * Poner siempre OR también sería correcto (sin condiciones se comporta como un AND), pero el
-     * AND es más eficiente en el motor y deja más claro en el diagrama que llegan todas las ramas.
+     * Poner siempre OR también sería correcto (sin condiciones se comporta como un
+     * AND), pero el
+     * AND es más eficiente en el motor y deja más claro en el diagrama que llegan
+     * todas las ramas.
      *
      * @param sources   acciones de las que salen las ramas que llegan al join
-     * @param mayNotRun acciones que pueden no ejecutarse, calculadas por {@link #findActionsThatMayNotRun()}
+     * @param mayNotRun acciones que pueden no ejecutarse, calculadas por
+     *                  {@link #findActionsThatMayNotRun()}
      */
     private static Gateway.GatewayType solveJoinType(Collection<ActionWrapper<PlanDefinitionActionComponent>> sources,
             Set<ActionWrapper<PlanDefinitionActionComponent>> mayNotRun) {
@@ -220,11 +279,16 @@ public class R4PlanReader implements PlanReader {
     }
 
     /**
-     * Acciones que pueden no ejecutarse: las que tienen condición applicability y, en cascada, las
-     * que solo pueden alcanzarse a través de ellas (todas sus anteriores pueden no ejecutarse).
-     * Se calcula como punto fijo iterando hasta que no cambia, lo que termina aunque haya ciclos.
-     * Supone que si no se cumple la condición de una acción tampoco se ejecuta su rama: es la
-     * semántica natural en BPMN, pero está pendiente de revisar en la gestión de condiciones.
+     * Acciones que pueden no ejecutarse: las que tienen condición applicability y,
+     * en cascada, las
+     * que solo pueden alcanzarse a través de ellas (todas sus anteriores pueden no
+     * ejecutarse).
+     * Se calcula como punto fijo iterando hasta que no cambia, lo que termina
+     * aunque haya ciclos.
+     * Supone que si no se cumple la condición de una acción tampoco se ejecuta su
+     * rama: es la
+     * semántica natural en BPMN, pero está pendiente de revisar en la gestión de
+     * condiciones.
      */
     private Set<ActionWrapper<PlanDefinitionActionComponent>> findActionsThatMayNotRun() {
         Set<ActionWrapper<PlanDefinitionActionComponent>> mayNotRun = new HashSet<>();
@@ -251,15 +315,19 @@ public class R4PlanReader implements PlanReader {
         return action.getCondition().stream()
                 .anyMatch(c -> c.getKind() == ActionConditionKind.APPLICABILITY);
     }
+
     /**
-     * Implementa ordenación de las acciones del plan, para completar la información de la lista de ActionWrappers con los metadatos necesarios para la gestión de las acciones y su manipulación en una estructura de lista enlazada.
+     * Implementa ordenación de las acciones del plan, para completar la información
+     * de la lista de ActionWrappers con los metadatos necesarios para la gestión de
+     * las acciones y su manipulación en una estructura de lista enlazada.
      */
     private void shortActions() {
-        //Busco las relaciones antes y después de cada acción y añado las relaciones en los wrappers correspondientes
-        for(ActionWrapper<PlanDefinitionActionComponent> wrapper: actions) {
+        // Busco las relaciones antes y después de cada acción y añado las relaciones en
+        // los wrappers correspondientes
+        for (ActionWrapper<PlanDefinitionActionComponent> wrapper : actions) {
             PlanDefinitionActionComponent action = wrapper.getAction();
             List<PlanDefinitionActionRelatedActionComponent> relatedActions = action.getRelatedAction();
-            for(PlanDefinitionActionRelatedActionComponent relatedAction : relatedActions) {
+            for (PlanDefinitionActionRelatedActionComponent relatedAction : relatedActions) {
                 String relatedActionId = relatedAction.getActionId();
                 ActionRelationshipType relationship = relatedAction.getRelationship();
                 if (relationship == null || relationship == ActionRelationshipType.NULL) {
@@ -301,9 +369,10 @@ public class R4PlanReader implements PlanReader {
                         logger.warn("Tipo de relación aún no soportado: {}", relationship.toCode());
                 }
             }
-           
+
         }
     }
+
     /** Acciones del plan, en el orden del documento */
     public Set<ActionWrapper<PlanDefinitionActionComponent>> getActions() {
         return Collections.unmodifiableSet(actions);
@@ -319,13 +388,13 @@ public class R4PlanReader implements PlanReader {
 
     @Override
     public String getDocumentation() {
-        String documentation="";
+        String documentation = "";
         String publisher = plan.getPublisher();
         if (publisher != null && !publisher.isEmpty()) {
             documentation += "Publisher: " + publisher + " ";
         }
         String description = plan.getDescription();
-      
+
         if (description != null && !description.isEmpty()) {
             documentation += "Description: " + description + " ";
         }
@@ -335,7 +404,7 @@ public class R4PlanReader implements PlanReader {
         }
         String purpose = plan.getPurpose();
         if (purpose != null && !purpose.isEmpty()) {
-            documentation += "Purpose: " + purpose+ " ";
+            documentation += "Purpose: " + purpose + " ";
         }
         // Implement logic to extract the documentation from the planDefinition
         return documentation; // Placeholder implementation
@@ -348,9 +417,11 @@ public class R4PlanReader implements PlanReader {
     }
 
     /**
-     * Id del proceso: el id del PlanDefinition; si no tiene (p.ej. un plan nuevo que aún no está
+     * Id del proceso: el id del PlanDefinition; si no tiene (p.ej. un plan nuevo
+     * que aún no está
      * en el servidor) se usa su name, y si tampoco tiene name se genera uno.
-     * El id generado se guarda para que llamadas sucesivas devuelvan siempre el mismo.
+     * El id generado se guarda para que llamadas sucesivas devuelvan siempre el
+     * mismo.
      */
     @Override
     public String getId() {
@@ -373,7 +444,8 @@ public class R4PlanReader implements PlanReader {
     }
 
     /**
-     * Los ids BPMN son NCName de XML: deben empezar por letra o '_' y no admiten espacios
+     * Los ids BPMN son NCName de XML: deben empezar por letra o '_' y no admiten
+     * espacios
      * ni la mayoría de símbolos. Los caracteres no válidos se sustituyen por '_'.
      */
     private static String toBpmnId(String name) {

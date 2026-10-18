@@ -27,9 +27,9 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
      */
     private final R4SubprocessLocator subprocessLocator;
 
-    /** Transformador sin acceso a servidor: solo admite planes sin acciones */
     public R4Plan2FlowablePlanTransformer() {
-        this(ResourceResolver.NONE);
+        this.resolver = null;
+        this.subprocessLocator = null;
     }
 
     public R4Plan2FlowablePlanTransformer(ResourceResolver resolver) {

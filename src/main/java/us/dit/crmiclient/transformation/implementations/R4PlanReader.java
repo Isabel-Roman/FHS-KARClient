@@ -112,7 +112,7 @@ public class R4PlanReader implements PlanReader {
      * planes sin acciones (un plan con acciones se rechaza).
      */
     public R4PlanReader(String rawPlanDefinition) {
-        this(rawPlanDefinition, ResourceResolver.NONE);
+        this(rawPlanDefinition, null);
     }
 
     /**

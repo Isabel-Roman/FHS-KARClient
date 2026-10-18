@@ -57,6 +57,7 @@ public class R4FlowableCrmiFacade implements CrmiFacade{
 
     @Override
     public void publishPlan(String rawPlanDefinition) {
+        ResourceResolver resolver = new ResourceResolver(fhirClient);
         R4Plan2FlowablePlanTransformer transformer = new R4Plan2FlowablePlanTransformer();
         String bpmnModel = transformer.Plan2Bpmn(rawPlanDefinition);
         logger.debug("Modelo BPMN generado:\n{}", bpmnModel);

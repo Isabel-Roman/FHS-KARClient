@@ -12,13 +12,16 @@ import org.hl7.fhir.r4.model.MetadataResource;
 import org.hl7.fhir.r4.model.PlanDefinition;
 import org.hl7.fhir.r4.model.RelatedArtifact;
 import org.hl7.fhir.r4.model.RelatedArtifact.RelatedArtifactType;
+
+import us.dit.crmiclient.transformation.ResourceResolver;
+
 import org.hl7.fhir.r4.model.Resource;
 
 /**
  * Servidor CRMI simulado para los tests: guarda los recursos en memoria, por url canónica
  * (PlanDefinition, Library) o por url de referencia (Endpoint).
  */
-class InMemoryR4Resolver implements R4ResourceResolver {
+class InMemoryR4Resolver implements ResourceResolver {
 
     private final Map<String, Resource> resources = new HashMap<>();
 

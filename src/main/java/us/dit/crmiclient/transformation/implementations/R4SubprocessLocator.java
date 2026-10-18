@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import us.dit.crmiclient.model.SubprocessDeployment;
 import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
+import us.dit.crmiclient.transformation.ResourceResolver;
 
 /**
  * Localiza, a partir del PlanDefinition de un subproceso, su despliegue en un tipo de motor.
@@ -43,11 +44,11 @@ public class R4SubprocessLocator {
     private static final String BPMN_NAMESPACE = "http://www.omg.org/spec/BPMN/20100524/MODEL";
 
     /** Obtiene del servidor CRMI los PlanDefinition, Library y Endpoint */
-    private final R4ResourceResolver resolver;
+    private final ResourceResolver resolver;
     /** Tipo de motor buscado: código de Endpoint.connectionType (p.ej. "flowable") */
     private final String engineType;
 
-    public R4SubprocessLocator(R4ResourceResolver resolver, String engineType) {
+    public R4SubprocessLocator(ResourceResolver resolver, String engineType) {
         this.resolver = resolver;
         this.engineType = engineType;
     }

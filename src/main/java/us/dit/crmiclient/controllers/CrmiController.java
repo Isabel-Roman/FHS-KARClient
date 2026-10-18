@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import ca.uhn.fhir.parser.DataFormatException;
 import us.dit.crmiclient.services.CrmiFacade;
+import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 
 /**
  * Interfaz REST para ejecutar las operaciones de la fachada CRMI.
@@ -44,6 +45,16 @@ public class CrmiController {
     @ExceptionHandler(DataFormatException.class)
     public ResponseEntity<String> handleInvalidResource(DataFormatException e) {
         logger.warn("PlanDefinition no válido: {}", e.getMessage());
+        return ResponseEntity.badRequest().body(e.getMessage());
+    }
+
+    /**
+     * Un PlanDefinition bien formado pero que no cumple las reglas del proyecto también es un
+     * error del cliente.
+     */
+    @ExceptionHandler(InvalidPlanDefinitionException.class)
+    public ResponseEntity<String> handleUnsupportedPlan(InvalidPlanDefinitionException e) {
+        logger.warn("PlanDefinition no transformable: {}", e.getMessage());
         return ResponseEntity.badRequest().body(e.getMessage());
     }
 }

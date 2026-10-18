@@ -1,9 +1,12 @@
 package us.dit.crmiclient.transformation.implementations;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
+
+import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 
 class R4PlanReaderTest {
 
@@ -39,5 +42,21 @@ class R4PlanReaderTest {
         String id = reader.getId();
         assertTrue(id.startsWith("plan-"));
         assertEquals(id, reader.getId());
+    }
+
+    @Test
+    void rejectsNestedActions() {
+        assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader("""
+                {"resourceType": "PlanDefinition", "name": "PlanAnidado",
+                 "action": [{"id": "grupo", "action": [{"id": "hija"}]}]}
+                """));
+    }
+
+    @Test
+    void rejectsDuplicatedActionIds() {
+        assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader("""
+                {"resourceType": "PlanDefinition", "name": "PlanDuplicado",
+                 "action": [{"id": "a"}, {"id": "a"}]}
+                """));
     }
 }

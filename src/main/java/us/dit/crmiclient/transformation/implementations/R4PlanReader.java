@@ -1,6 +1,7 @@
 package us.dit.crmiclient.transformation.implementations;
 
 import us.dit.crmiclient.model.ActionWrapper;
+import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 import us.dit.crmiclient.transformation.PlanReader;
 
 import java.util.HashMap;
@@ -83,6 +84,8 @@ public class R4PlanReader implements PlanReader {
      * El id del wrapper es el id BPMN: el id FHIR saneado como NCName y único en el proceso.
      * Las acciones sin id reciben uno generado, pero no pueden ser referenciadas por otras.
      * Un id FHIR duplicado hace ambiguas las referencias, así que el plan se rechaza.
+     * Restricción del proyecto: todas las acciones son de primer nivel, el orden se expresa solo
+     * con relatedAction. Un plan con acciones anidadas se rechaza para no ignorarlas en silencio.
      */
     private void createActions() {
         actions = new LinkedHashSet<>();
@@ -91,15 +94,19 @@ public class R4PlanReader implements PlanReader {
         int index = 0;
         for (PlanDefinitionActionComponent action : plan.getAction()) {
             index++;
-            ActionWrapper<PlanDefinitionActionComponent> wrapper = new ActionWrapper<>(action);
             String fhirId = action.getId();
+            if (action.hasAction()) {
+                throw new InvalidPlanDefinitionException("La acción " + index + " (id=" + fhirId + ", '" + action.getTitle()
+                        + "') tiene acciones anidadas, no soportadas: todas las acciones deben ser de primer nivel");
+            }
+            ActionWrapper<PlanDefinitionActionComponent> wrapper = new ActionWrapper<>(action);
             String bpmnId;
             if (fhirId == null || fhirId.isBlank()) {
                 bpmnId = "action_" + index;
                 logger.warn("La acción {} ('{}') no tiene id, se le asigna {}", index, action.getTitle(), bpmnId);
             } else {
                 if (actionsByFhirId.containsKey(fhirId)) {
-                    throw new IllegalArgumentException("Id de acción duplicado en el PlanDefinition: " + fhirId);
+                    throw new InvalidPlanDefinitionException("Id de acción duplicado en el PlanDefinition: " + fhirId);
                 }
                 actionsByFhirId.put(fhirId, wrapper);
                 bpmnId = toBpmnId(fhirId);
@@ -156,15 +163,15 @@ public class R4PlanReader implements PlanReader {
                     continue;
                 }
                 switch (relationship) {
-                    case BEFORE:
+                    case BEFORE, BEFORESTART, BEFOREEND:
                         wrapper.setNext(related);
                         related.setPrevious(wrapper);
                         break;
-                    case AFTER:
+                    case AFTER, AFTERSTART, AFTEREND:
                         wrapper.setPrevious(related);
                         related.setNext(wrapper);
                         break;
-                    case CONCURRENT:
+                    case CONCURRENT, CONCURRENTWITHSTART, CONCURRENTWITHEND:
                         wrapper.setConcurrent(related);
                         related.setConcurrent(wrapper);
                         break;

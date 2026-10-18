@@ -28,7 +28,7 @@ public class R4PlanReader implements PlanReader {
                 .parseResource(PlanDefinition.class, rawPlanDefinition);
         
         createActions();
-        actionsOrder();
+        shortActions();
         actionsReasoning();
         logger.debug("PlanDefinition leído: id={}, name={}", plan.getId(), plan.getName());
     }
@@ -48,9 +48,9 @@ public class R4PlanReader implements PlanReader {
         
     }
     /**
-     * Implementa ordenamiento de las acciones del plan, para completar la información de la lista de ActionWrappers con los metadatos necesarios para la gestión de las acciones y su manipulación en una estructura de lista enlazada.
+     * Implementa ordenación de las acciones del plan, para completar la información de la lista de ActionWrappers con los metadatos necesarios para la gestión de las acciones y su manipulación en una estructura de lista enlazada.
      */
-    private void actionsOrder() {
+    private void shortActions() {
         //Busco las relaciones antes y después de cada acción y añado las relaciones en los wrappers correspondientes
         for(ActionWrapper<PlanDefinitionActionComponent> wrapper: actions) {
             PlanDefinitionActionComponent action = wrapper.getAction();
@@ -81,6 +81,13 @@ public class R4PlanReader implements PlanReader {
                         break;
                     case CONCURRENT:
                         // Implement logic for CONCURRENT relationship
+                        actions.stream()
+                                .filter(a -> a.getId().equals(relatedActionId))
+                                .findFirst()
+                                .ifPresent(a -> {
+                                    wrapper.setConcurrent(a);
+                                    a.setConcurrent(wrapper);
+                                });
                         break;
                     default:
                         logger.warn("Unknown relationship type: {}", relationship);

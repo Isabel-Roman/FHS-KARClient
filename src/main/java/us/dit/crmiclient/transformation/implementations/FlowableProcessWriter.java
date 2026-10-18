@@ -66,12 +66,14 @@ public class FlowableProcessWriter implements BpmnWriter {
         // Por ejemplo, podrías crear un StartEvent y agregarlo al proceso
         StartEvent start = new StartEvent();
         start.setId("startEvent");
-        logger.debug("Añadido evento de inicio {}", startGateway.getId());
+       
         process.addFlowElement(start);
+        logger.debug("Añadido evento de inicio {}", start.getId());
         //Si hay gatway de inicio se añade y se conecta con el eventto de inicio
         if (startGateway != null) {
             Gateway gateway = toFlowableGateway(startGateway);
             process.addFlowElement(gateway);
+            logger.debug("Añadido gateway de inicio {}", gateway.getId());
             addSequenceFlow(start.getId(), gateway.getId());
         }
     }
@@ -103,11 +105,12 @@ public class FlowableProcessWriter implements BpmnWriter {
         // Por ejemplo, podrías crear un EndEvent y agregarlo al proceso
         EndEvent end = new EndEvent();
         end.setId("endEvent");
-        logger.debug("Añadido evento de fin {}", endGateway.getId());
+        logger.debug("Añadido evento de fin {}", end.getId());
         //Si hay gateway de salida se añade y se conecta con el evento de fin
         if (endGateway != null) {
             Gateway gateway = toFlowableGateway(endGateway);
             process.addFlowElement(gateway);
+            logger.debug("Añadido gateway de fin {}", gateway.getId());
             addSequenceFlow(gateway.getId(), end.getId());
         }
         process.addFlowElement(end);

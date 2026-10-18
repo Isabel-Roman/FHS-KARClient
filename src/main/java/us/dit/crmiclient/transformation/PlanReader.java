@@ -6,7 +6,8 @@ public interface PlanReader {
   
     String getName();
     String getId();
+    String getDocumentation(); // Nuevo método para obtener la documentación del plan
     SimpleGateway getStartGateway(); 
     SimpleGateway getEndGateway();
-    String getDocumentation(); // Nuevo método para obtener la documentación del plan
+    
 }

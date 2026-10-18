@@ -2,19 +2,25 @@ package us.dit.crmiclient.model;
 
 public class Gateway {
     public enum GatewayType {
-        AND,
-        XOR,
+        AND,  
         OR
     };
 
-    public Gateway(GatewayType type) {
+    /** Id BPMN del gateway, necesario para enlazarlo con sequence flows */
+    private final String id;
+    private final GatewayType type;
+
+    public Gateway(String id, GatewayType type) {
+        this.id = id;
         this.type = type;
     }
 
-    private GatewayType type;
+    public String getId() {
+        return this.id;
+    }
 
     public GatewayType getType() {
         return this.type;
-    }   
+    }
 
 }

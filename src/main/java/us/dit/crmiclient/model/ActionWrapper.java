@@ -1,6 +1,5 @@
 package us.dit.crmiclient.model;
 
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -18,7 +17,7 @@ public class ActionWrapper<T> {
     /** Acciones que se ejecutan concurrentemente */
     private Set<ActionWrapper<T>> concurrent;
     /** Puerta de entrada */
-    private Gateway intGateway;
+    private Gateway inGateway;
     /** Puerta de salida */
     private Gateway outGateway;
 
@@ -80,12 +79,13 @@ public class ActionWrapper<T> {
         this.concurrent.add(concurrent);
     }
 
-    public Gateway getIntGateway() {
-        return intGateway;
+
+    public Gateway getInGateway() {
+        return inGateway;
     }
 
-    public void setIntGateway(Gateway intGateway) {
-        this.intGateway = intGateway;
+    public void setInGateway(Gateway inGateway) {
+        this.inGateway = inGateway;
     }
 
     public Gateway getOutGateway() {

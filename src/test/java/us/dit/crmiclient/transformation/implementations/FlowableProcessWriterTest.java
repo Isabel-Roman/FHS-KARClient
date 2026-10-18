@@ -33,6 +33,10 @@ class FlowableProcessWriterTest {
 
     @Test
     void constructorCreatesExecutableProcess() throws Exception {
+        writer.setId("process");
+        writer.setName("Process Name");
+        writer.setStartEvent("Inicio");
+        writer.setEndEvent("Fin");
         String xml = writer.getModel();
 
         assertNotNull(xml);

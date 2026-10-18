@@ -3,6 +3,7 @@ import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.BpmnWriter;
 import us.dit.crmiclient.transformation.PlanReader;
 import us.dit.crmiclient.transformation.PlanTransformer;
+import us.dit.crmiclient.transformation.ResourceResolver;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,13 +14,33 @@ import org.slf4j.LoggerFactory;
 public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
     private static final Logger logger = LoggerFactory.getLogger(R4Plan2FlowablePlanTransformer.class);
 
+    /** Tipo de motor (código de Endpoint.connectionType) en el que deben estar desplegados los subprocesos */
+    public static final String ENGINE_TYPE = "flowable";
+
     private PlanReader planReader=null;
     private BpmnWriter processWriter=null;
+    /** Obtiene del servidor CRMI los recursos de los subprocesos de las acciones */
+    private final ResourceResolver resolver;
+    /**
+     * Localiza el despliegue en Flowable del subproceso de cada acción, a partir de la canónica que
+     * deja el reader en el wrapper. Lo usará el mapeo de las acciones a tareas BPMN.
+     */
+    private final R4SubprocessLocator subprocessLocator;
+
+    /** Transformador sin acceso a servidor: solo admite planes sin acciones */
+    public R4Plan2FlowablePlanTransformer() {
+        this(ResourceResolver.NONE);
+    }
+
+    public R4Plan2FlowablePlanTransformer(ResourceResolver resolver) {
+        this.resolver = resolver;
+        this.subprocessLocator = new R4SubprocessLocator(resolver, ENGINE_TYPE);
+    }
 
     @Override
     public String Plan2Bpmn(String rawPlanDefinition) {
         logger.info("Iniciando transformación de PlanDefinition a BPMN");
-        this.planReader=new R4PlanReader(rawPlanDefinition);
+        this.planReader=new R4PlanReader(rawPlanDefinition, resolver);
         this.processWriter= new FlowableProcessWriter();
         // La lógica de transformación se descompone en pasos
         mapName();

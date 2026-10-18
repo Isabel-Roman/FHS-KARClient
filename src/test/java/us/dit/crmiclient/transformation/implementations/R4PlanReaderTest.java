@@ -5,8 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import org.hl7.fhir.r4.model.CanonicalType;
+import org.hl7.fhir.r4.model.PlanDefinition;
 import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionComponent;
 import org.junit.jupiter.api.Test;
+
+import ca.uhn.fhir.context.FhirContext;
+import ca.uhn.fhir.parser.IParser;
 
 import us.dit.crmiclient.model.ActionWrapper;
 import us.dit.crmiclient.model.SimpleGateway;
@@ -67,7 +72,7 @@ class R4PlanReaderTest {
 
     @Test
     void sequenceHasNoGateways() {
-        R4PlanReader reader = new R4PlanReader("""
+        R4PlanReader reader = readerWithProcesses("""
                 {"resourceType": "PlanDefinition", "name": "Secuencia",
                  "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before-start"}]},
                             {"id": "b"}]}
@@ -81,7 +86,7 @@ class R4PlanReaderTest {
     @Test
     void forkAndJoinWithoutConditionsAreAnd() {
         // a -> (b, c) -> d
-        R4PlanReader reader = new R4PlanReader("""
+        R4PlanReader reader = readerWithProcesses("""
                 {"resourceType": "PlanDefinition", "name": "ForkJoin",
                  "action": [{"id": "a"},
                             {"id": "b", "relatedAction": [{"actionId": "a", "relationship": "after"}]},
@@ -100,7 +105,7 @@ class R4PlanReaderTest {
     @Test
     void conditionalBranchMakesSplitAndJoinOr() {
         // a -> (b [condición], c) -> d
-        R4PlanReader reader = new R4PlanReader("""
+        R4PlanReader reader = readerWithProcesses("""
                 {"resourceType": "PlanDefinition", "name": "Condicional",
                  "action": [{"id": "a"},
                             {"id": "b", %s, "relatedAction": [{"actionId": "a", "relationship": "after"}]},
@@ -115,7 +120,7 @@ class R4PlanReaderTest {
     @Test
     void joinIsOrWhenAConditionIsFurtherUpTheBranch() {
         // a -> (b [condición] -> e, c) -> d : la rama que llega desde e puede no llegar
-        R4PlanReader reader = new R4PlanReader("""
+        R4PlanReader reader = readerWithProcesses("""
                 {"resourceType": "PlanDefinition", "name": "Cascada",
                  "action": [{"id": "a"},
                             {"id": "b", %s, "relatedAction": [{"actionId": "a", "relationship": "after"}]},
@@ -130,7 +135,7 @@ class R4PlanReaderTest {
 
     @Test
     void singleConditionalSuccessorNeedsOrSplit() {
-        R4PlanReader reader = new R4PlanReader("""
+        R4PlanReader reader = readerWithProcesses("""
                 {"resourceType": "PlanDefinition", "name": "UnaCondicional",
                  "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before"}]},
                             {"id": "b", %s}]}
@@ -140,7 +145,7 @@ class R4PlanReaderTest {
 
     @Test
     void independentActionsGetStartAndEndGateways() {
-        R4PlanReader reader = new R4PlanReader("""
+        R4PlanReader reader = readerWithProcesses("""
                 {"resourceType": "PlanDefinition", "name": "Independientes",
                  "action": [{"id": "x"}, {"id": "y", %s}]}
                 """.formatted(CONDITION));
@@ -156,5 +161,58 @@ class R4PlanReaderTest {
                 {"resourceType": "PlanDefinition", "name": "PlanDuplicado",
                  "action": [{"id": "a"}, {"id": "a"}]}
                 """));
+    }
+
+    private static final String SUBPLAN = "http://ejemplo/PlanDefinition/notificar";
+
+    /** Plan con una única acción "a" cuyo PlanDefinition es SUBPLAN */
+    private static final String PLAN_WITH_SUBPROCESS = """
+            {"resourceType": "PlanDefinition", "name": "ConSubproceso",
+             "action": [{"id": "a", "definitionCanonical": "%s"}]}
+            """.formatted(SUBPLAN);
+
+    @Test
+    void storesCanonicalOfTheActionPlanDefinition() {
+        InMemoryR4Resolver crmi = new InMemoryR4Resolver().add(SUBPLAN, new PlanDefinition());
+        R4PlanReader reader = new R4PlanReader(PLAN_WITH_SUBPROCESS, crmi);
+        assertEquals(SUBPLAN, action(reader, "a").getSubprocessCanonical());
+    }
+
+    @Test
+    void pinsTheVersionOfTheFoundPlanDefinition() {
+        PlanDefinition subplan = new PlanDefinition();
+        subplan.setVersion("1.2.0");
+        InMemoryR4Resolver crmi = new InMemoryR4Resolver().add(SUBPLAN, subplan);
+        R4PlanReader reader = new R4PlanReader(PLAN_WITH_SUBPROCESS, crmi);
+        assertEquals(SUBPLAN + "|1.2.0", action(reader, "a").getSubprocessCanonical());
+    }
+
+    @Test
+    void rejectsActionWithoutDefinition() {
+        assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader("""
+                {"resourceType": "PlanDefinition", "name": "SinDefinition",
+                 "action": [{"id": "a"}]}
+                """, new InMemoryR4Resolver()));
+    }
+
+    @Test
+    void rejectsActionWhoseDefinitionIsNotFound() {
+        assertThrows(InvalidPlanDefinitionException.class,
+                () -> new R4PlanReader(PLAN_WITH_SUBPROCESS, new InMemoryR4Resolver()));
+    }
+
+    /**
+     * Para los tests que no tratan de subprocesos: da a cada acción sin definitionCanonical un
+     * PlanDefinition existente, ya que toda acción debe tenerlo.
+     */
+    private static R4PlanReader readerWithProcesses(String rawPlan) {
+        String subplan = "http://ejemplo/PlanDefinition/tarea";
+        IParser parser = FhirContext.forR4().newJsonParser();
+        PlanDefinition plan = parser.parseResource(PlanDefinition.class, rawPlan);
+        plan.getAction().stream()
+                .filter(a -> !a.hasDefinition())
+                .forEach(a -> a.setDefinition(new CanonicalType(subplan)));
+        InMemoryR4Resolver crmi = new InMemoryR4Resolver().add(subplan, new PlanDefinition());
+        return new R4PlanReader(parser.encodeResourceToString(plan), crmi);
     }
 }

@@ -2,6 +2,7 @@ package us.dit.crmiclient.model;
 
 import java.util.Set;
 
+
 /**
  * Envuelve acciones de cualquier versión fhir y añade metadatos para su gestión
  * facilita la manipulación de estas acciones en una estructura de lista
@@ -20,10 +21,16 @@ public class ActionWrapper<T> {
     private SimpleGateway inGateway;
     /** Puerta de salida */
     private SimpleGateway outGateway;
+    /**
+     * Canónica (url|version) del PlanDefinition del subproceso que implementa la acción. A partir
+     * de ella, el transformer de cada motor localiza dónde y cómo arrancarlo.
+     */
+    private String subprocessCanonical;
 
     public ActionWrapper(T action) {
         this.action = action;
     }
+    
 
     public T getAction() {
         return action;
@@ -94,6 +101,14 @@ public class ActionWrapper<T> {
 
     public void setOutGateway(SimpleGateway outGateway) {
         this.outGateway = outGateway;
+    }
+
+    public String getSubprocessCanonical() {
+        return subprocessCanonical;
+    }
+
+    public void setSubprocessCanonical(String subprocessCanonical) {
+        this.subprocessCanonical = subprocessCanonical;
     }
 
 }

@@ -4,6 +4,7 @@ import us.dit.crmiclient.model.ActionWrapper;
 import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 import us.dit.crmiclient.transformation.PlanReader;
+import us.dit.crmiclient.transformation.ResourceResolver;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
 
 import ca.uhn.fhir.context.FhirContext;
 import org.hl7.fhir.r4.model.PlanDefinition;
@@ -102,14 +104,30 @@ public class R4PlanReader implements PlanReader {
      */
     private SimpleGateway endGateway;
 
+    /** Obtiene del servidor CRMI los PlanDefinition de las acciones */
+    private final ResourceResolver resolver;
+
+    /**
+     * Reader sin acceso a servidor: no resuelve ningún recurso, así que solo sirve para
+     * planes sin acciones (un plan con acciones se rechaza).
+     */
     public R4PlanReader(String rawPlanDefinition) {
+        this(rawPlanDefinition, ResourceResolver.NONE);
+    }
+
+    /**
+     * @param resolver obtiene los PlanDefinition referenciados por las acciones (del servidor CRMI)
+     */
+    public R4PlanReader(String rawPlanDefinition, ResourceResolver resolver) {
+        this.resolver = resolver;
         this.plan = FhirContext.forR4()
                 .newJsonParser()
                 .parseResource(PlanDefinition.class, rawPlanDefinition);
 
         createActions();
         shortActions();
-        findGateways();
+        solveGateways();
+        solveSubprocessesCalls();
         logger.debug("PlanDefinition leído: id={}, name={}", plan.getId(), plan.getName());
     }
 
@@ -186,7 +204,7 @@ public class R4PlanReader implements PlanReader {
      * en el propio reader (startGateway y endGateway).</li>
      * </ul>
      */
-    private void findGateways() {
+    private void solveGateways() {
         // Conjunto de acciones que podrían no ejecutarse, porque tienen condición o
         // solo se llega a ellas a través de acciones con condición
         Set<ActionWrapper<PlanDefinitionActionComponent>> mayNotRun = findActionsThatMayNotRun();
@@ -370,6 +388,38 @@ public class R4PlanReader implements PlanReader {
                 }
             }
 
+        }
+    }
+    /**
+     * Para cada acción localiza el PlanDefinition asociado (campo definition) en el servidor CRMI
+     * y guarda en el wrapper su canónica, con la que se localizará después el subproceso.
+     * Toda acción debe tener un PlanDefinition existente: si no, el plan se rechaza.
+     * <p>
+     * El reader no depende del motor: dónde y cómo arrancar el subproceso (su Library y Endpoint
+     * para un tipo de motor) lo resuelve el transformer de cada motor con {@link R4SubprocessLocator}.
+     * Pendiente: los parámetros de invocación, que se obtendrán de dynamicValue.
+     */
+    private void solveSubprocessesCalls() {
+        for (ActionWrapper<PlanDefinitionActionComponent> wrapper : actions) {
+            PlanDefinitionActionComponent action = wrapper.getAction();
+            if (!action.hasDefinitionCanonicalType()) {
+                throw new InvalidPlanDefinitionException("La acción " + wrapper.getId()
+                        + " no tiene definitionCanonical: toda acción debe tener un PlanDefinition asociado");
+            }
+            String canonical = action.getDefinitionCanonicalType().getValue();
+            // Los PlanDefinition de las acciones están siempre en un servidor externo (CRMI)
+            PlanDefinition definition = resolver.resolveCanonical(canonical, PlanDefinition.class);
+            if (definition == null) {
+                throw new InvalidPlanDefinitionException("No se encuentra el PlanDefinition " + canonical
+                        + " de la acción " + wrapper.getId());
+            }
+            // Sin versión en la referencia se fija la del plan encontrado, para que al localizar
+            // el subproceso después se use el mismo que se ha validado aquí
+            if (!canonical.contains("|") && definition.hasVersion()) {
+                canonical = canonical + "|" + definition.getVersion();
+            }
+            wrapper.setSubprocessCanonical(canonical);
+            logger.debug("La acción {} se implementa con el PlanDefinition {}", wrapper.getId(), canonical);
         }
     }
 

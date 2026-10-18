@@ -1,4 +1,5 @@
 package us.dit.crmiclient.transformation.implementations;
+import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.BpmnWriter;
 import us.dit.crmiclient.transformation.PlanReader;
 import us.dit.crmiclient.transformation.PlanTransformer;
@@ -26,7 +27,6 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
         mapDocumentation();
         mapStart();
         mapEnd();
-
         logger.info("Transformación completada para el plan {}", planReader.getId());
         return processWriter.getModel();
     }
@@ -46,13 +46,14 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
     }
     private void mapStart(){
         // Implementar la lógica para mapear el inicio del plan al proceso BPMN
-        String startEvent = planReader.getStartEvent();
-        processWriter.setStartEvent(startEvent);
+        SimpleGateway startGateway = planReader.getStartGateway();
+        processWriter.setStartEvent(startGateway);
     }
     private void mapEnd(){
         // Implementar la lógica para mapear el final del plan al proceso BPMN
-        String endEvent = planReader.getEndEvent();
-        processWriter.setEndEvent(endEvent);
+        SimpleGateway endGateway = planReader.getEndGateway();
+        processWriter.setEndEvent(endGateway);
     }
 
+   
 }

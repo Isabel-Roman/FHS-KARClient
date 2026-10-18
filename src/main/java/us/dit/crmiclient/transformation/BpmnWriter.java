@@ -1,4 +1,7 @@
 package us.dit.crmiclient.transformation;
+
+import us.dit.crmiclient.model.SimpleGateway;
+
 /**
  * Interfaz que permite escribir un modelo en formato XML
  */
@@ -10,8 +13,8 @@ public interface BpmnWriter {
     String getModel();
     void setName(String name);
     void setId(String id);
-    void setStartEvent(String startEvent);
-    void setEndEvent(String endEvent);
+    void setStartEvent(SimpleGateway startGateway);
+    void setEndEvent(SimpleGateway endGateway);
     void setDocumentation(String documentation); // Nuevo método para establecer la documentación del proceso
 
 }

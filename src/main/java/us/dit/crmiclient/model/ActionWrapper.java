@@ -17,9 +17,9 @@ public class ActionWrapper<T> {
     /** Acciones que se ejecutan concurrentemente */
     private Set<ActionWrapper<T>> concurrent;
     /** Puerta de entrada */
-    private Gateway inGateway;
+    private SimpleGateway inGateway;
     /** Puerta de salida */
-    private Gateway outGateway;
+    private SimpleGateway outGateway;
 
     public ActionWrapper(T action) {
         this.action = action;
@@ -80,19 +80,19 @@ public class ActionWrapper<T> {
     }
 
 
-    public Gateway getInGateway() {
+    public SimpleGateway getInGateway() {
         return inGateway;
     }
 
-    public void setInGateway(Gateway inGateway) {
+    public void setInGateway(SimpleGateway inGateway) {
         this.inGateway = inGateway;
     }
 
-    public Gateway getOutGateway() {
+    public SimpleGateway getOutGateway() {
         return outGateway;
     }
 
-    public void setOutGateway(Gateway outGateway) {
+    public void setOutGateway(SimpleGateway outGateway) {
         this.outGateway = outGateway;
     }
 

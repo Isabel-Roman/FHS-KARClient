@@ -1,6 +1,6 @@
 package us.dit.crmiclient.model;
 
-public class Gateway {
+public class SimpleGateway {
     public enum GatewayType {
         AND,  
         OR
@@ -10,9 +10,9 @@ public class Gateway {
     private final String id;
     private final GatewayType type;
 
-    public Gateway(String id, GatewayType type) {
+    public SimpleGateway(String id, GatewayType and) {
         this.id = id;
-        this.type = type;
+        this.type = and;
     }
 
     public String getId() {

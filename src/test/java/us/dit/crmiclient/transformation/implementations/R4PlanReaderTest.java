@@ -9,7 +9,7 @@ import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionComponent;
 import org.junit.jupiter.api.Test;
 
 import us.dit.crmiclient.model.ActionWrapper;
-import us.dit.crmiclient.model.Gateway;
+import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 
 class R4PlanReaderTest {
@@ -89,11 +89,11 @@ class R4PlanReaderTest {
                             {"id": "d", "relatedAction": [{"actionId": "b", "relationship": "after"},
                                                           {"actionId": "c", "relationship": "after"}]}]}
                 """);
-        Gateway split = action(reader, "a").getOutGateway();
-        Gateway join = action(reader, "d").getInGateway();
-        assertEquals(Gateway.GatewayType.AND, split.getType());
+        SimpleGateway split = action(reader, "a").getOutGateway();
+        SimpleGateway join = action(reader, "d").getInGateway();
+        assertEquals(SimpleGateway.GatewayType.AND, split.getType());
         assertEquals("gw_out_a", split.getId());
-        assertEquals(Gateway.GatewayType.AND, join.getType());
+        assertEquals(SimpleGateway.GatewayType.AND, join.getType());
         assertEquals("gw_in_d", join.getId());
     }
 
@@ -108,8 +108,8 @@ class R4PlanReaderTest {
                             {"id": "d", "relatedAction": [{"actionId": "b", "relationship": "after"},
                                                           {"actionId": "c", "relationship": "after"}]}]}
                 """.formatted(CONDITION));
-        assertEquals(Gateway.GatewayType.OR, action(reader, "a").getOutGateway().getType());
-        assertEquals(Gateway.GatewayType.OR, action(reader, "d").getInGateway().getType());
+        assertEquals(SimpleGateway.GatewayType.OR, action(reader, "a").getOutGateway().getType());
+        assertEquals(SimpleGateway.GatewayType.OR, action(reader, "d").getInGateway().getType());
     }
 
     @Test
@@ -125,7 +125,7 @@ class R4PlanReaderTest {
                                                           {"actionId": "c", "relationship": "after"}]}]}
                 """.formatted(CONDITION));
         assertNull(action(reader, "b").getOutGateway());
-        assertEquals(Gateway.GatewayType.OR, action(reader, "d").getInGateway().getType());
+        assertEquals(SimpleGateway.GatewayType.OR, action(reader, "d").getInGateway().getType());
     }
 
     @Test
@@ -135,7 +135,7 @@ class R4PlanReaderTest {
                  "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before"}]},
                             {"id": "b", %s}]}
                 """.formatted(CONDITION));
-        assertEquals(Gateway.GatewayType.OR, action(reader, "a").getOutGateway().getType());
+        assertEquals(SimpleGateway.GatewayType.OR, action(reader, "a").getOutGateway().getType());
     }
 
     @Test
@@ -144,9 +144,9 @@ class R4PlanReaderTest {
                 {"resourceType": "PlanDefinition", "name": "Independientes",
                  "action": [{"id": "x"}, {"id": "y", %s}]}
                 """.formatted(CONDITION));
-        assertEquals(Gateway.GatewayType.OR, reader.getStartGateway().getType());
+        assertEquals(SimpleGateway.GatewayType.OR, reader.getStartGateway().getType());
         assertEquals("gw_start", reader.getStartGateway().getId());
-        assertEquals(Gateway.GatewayType.OR, reader.getEndGateway().getType());
+        assertEquals(SimpleGateway.GatewayType.OR, reader.getEndGateway().getType());
         assertEquals("gw_end", reader.getEndGateway().getId());
     }
 

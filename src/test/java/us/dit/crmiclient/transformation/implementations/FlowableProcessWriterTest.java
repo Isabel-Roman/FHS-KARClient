@@ -16,6 +16,8 @@ import org.flowable.bpmn.model.Process;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import us.dit.crmiclient.model.SimpleGateway;
+
 class FlowableProcessWriterTest {
 
     private FlowableProcessWriter writer;
@@ -35,8 +37,7 @@ class FlowableProcessWriterTest {
     void constructorCreatesExecutableProcess() throws Exception {
         writer.setId("process");
         writer.setName("Process Name");
-        writer.setStartEvent("Inicio");
-        writer.setEndEvent("Fin");
+        writer.setDocumentation("Process Documentation");
         String xml = writer.getModel();
 
         assertNotNull(xml);
@@ -69,12 +70,16 @@ class FlowableProcessWriterTest {
     @Test
     void addDiagramGeneratesShapesForFlowElements() throws Exception {
         writer.setId("proceso");
-        writer.setStartEvent("inicio");
-        writer.setEndEvent("fin");
-      
+        writer.setName("Proceso de prueba");
+        SimpleGateway startGateway = new SimpleGateway("inicio", SimpleGateway.GatewayType.AND);
+        SimpleGateway endGateway = new SimpleGateway("fin", SimpleGateway.GatewayType.OR);
+        writer.setStartEvent(startGateway);
+        writer.setEndEvent(endGateway);
 
         String xml = writer.getModel();
         assertTrue(xml.contains("BPMNDiagram"));
+        System.out.println("xml generado: \n" + xml);
+         
 
         BpmnModel model = parse(xml);
         assertNotNull(model.getGraphicInfo("inicio"));

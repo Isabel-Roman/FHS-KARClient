@@ -1,7 +1,7 @@
 package us.dit.crmiclient.transformation.implementations;
 
 import us.dit.crmiclient.model.ActionWrapper;
-import us.dit.crmiclient.model.Gateway;
+import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 import us.dit.crmiclient.transformation.PlanReader;
 
@@ -96,11 +96,11 @@ public class R4PlanReader implements PlanReader {
      * Split tras el evento de inicio hacia las primeras acciones; null si no hace
      * falta
      */
-    private Gateway startGateway;
+    private SimpleGateway startGateway;
     /**
      * Join de las últimas acciones antes del evento de fin; null si no hace falta
      */
-    private Gateway endGateway;
+    private SimpleGateway endGateway;
 
     public R4PlanReader(String rawPlanDefinition) {
         this.plan = FhirContext.forR4()
@@ -204,9 +204,9 @@ public class R4PlanReader implements PlanReader {
             // Si la acción no es la última, y tiene varias siguientes, o alguna siguiente
             // tiene condición applicability, necesita un split
             if (!wrapper.isLast()) {
-                Gateway.GatewayType outGatewayType = solveSplitType(wrapper.getNext());
+                SimpleGateway.GatewayType outGatewayType = solveSplitType(wrapper.getNext());
                 if (outGatewayType != null) {
-                    wrapper.setOutGateway(new Gateway("gw_out_" + wrapper.getId(), outGatewayType));
+                    wrapper.setOutGateway(new SimpleGateway("gw_out_" + wrapper.getId(), outGatewayType));
                 }
             }
             // Si la acción no es la primera y tiene más de una anterior, necesita un join.
@@ -214,14 +214,14 @@ public class R4PlanReader implements PlanReader {
             // OR, si no, AND
             if (!wrapper.isFirst() && wrapper.getPrevious().size() > 1) {
                 wrapper.setInGateway(
-                        new Gateway("gw_in_" + wrapper.getId(), solveJoinType(wrapper.getPrevious(), mayNotRun)));
+                        new SimpleGateway("gw_in_" + wrapper.getId(), solveJoinType(wrapper.getPrevious(), mayNotRun)));
             }
         }
         // Analizo el split de entrada mirando las primeras acciones. Las primeras acciones son las de salida del evento de inicio...
-        Gateway.GatewayType startSplit = solveSplitType(firsts);
-        startGateway = startSplit == null ? null : new Gateway("gw_start", startSplit);
+        SimpleGateway.GatewayType startSplit = solveSplitType(firsts);
+        startGateway = startSplit == null ? null : new SimpleGateway("gw_start", startSplit);
         // Analizo el join de salida mirando las últimas acciones. Las últimas acciones son las de entrada para el evento de fin...
-        endGateway = lasts.size() > 1 ? new Gateway("gw_end", solveJoinType(lasts, mayNotRun)) : null;
+        endGateway = lasts.size() > 1 ? new SimpleGateway("gw_end", solveJoinType(lasts, mayNotRun)) : null;
         logger.debug("Gateways del plan: inicio={}, fin={}",
                 startGateway == null ? "-" : startGateway.getType(), endGateway == null ? "-" : endGateway.getType());
     }
@@ -230,14 +230,14 @@ public class R4PlanReader implements PlanReader {
      * Tipo del gateway de salida hacia las acciones dadas, o null si no hace falta
      * gateway (una única siguiente y sin condición).
      */
-    private static Gateway.GatewayType solveSplitType(
+    private static SimpleGateway.GatewayType solveSplitType(
             Collection<ActionWrapper<PlanDefinitionActionComponent>> targets) {
-        Gateway.GatewayType type = null;
+        SimpleGateway.GatewayType type = null;
         boolean anyConditional = targets.stream().anyMatch(t -> hasApplicabilityCondition(t.getAction()));
         if (anyConditional) {
-            type = Gateway.GatewayType.OR;
+            type = SimpleGateway.GatewayType.OR;
         } else if (targets.size() > 1) {
-            type = Gateway.GatewayType.AND;
+            type = SimpleGateway.GatewayType.AND;
         }
         return type;
     }
@@ -273,9 +273,9 @@ public class R4PlanReader implements PlanReader {
      * @param mayNotRun acciones que pueden no ejecutarse, calculadas por
      *                  {@link #findActionsThatMayNotRun()}
      */
-    private static Gateway.GatewayType solveJoinType(Collection<ActionWrapper<PlanDefinitionActionComponent>> sources,
+    private static SimpleGateway.GatewayType solveJoinType(Collection<ActionWrapper<PlanDefinitionActionComponent>> sources,
             Set<ActionWrapper<PlanDefinitionActionComponent>> mayNotRun) {
-        return sources.stream().anyMatch(mayNotRun::contains) ? Gateway.GatewayType.OR : Gateway.GatewayType.AND;
+        return sources.stream().anyMatch(mayNotRun::contains) ? SimpleGateway.GatewayType.OR : SimpleGateway.GatewayType.AND;
     }
 
     /**
@@ -378,11 +378,13 @@ public class R4PlanReader implements PlanReader {
         return Collections.unmodifiableSet(actions);
     }
 
-    public Gateway getStartGateway() {
+    @Override 
+    public SimpleGateway getStartGateway() {
         return startGateway;
     }
 
-    public Gateway getEndGateway() {
+    @Override
+    public SimpleGateway getEndGateway() {
         return endGateway;
     }
 
@@ -451,18 +453,6 @@ public class R4PlanReader implements PlanReader {
     private static String toBpmnId(String name) {
         String id = name.trim().replaceAll("[^A-Za-z0-9_.-]", "_");
         return id.matches("^[A-Za-z_].*") ? id : "_" + id;
-    }
-
-    @Override
-    public String getStartEvent() {
-        // Implement logic to extract the start event from the planDefinition
-        return "Extracted Start Event"; // Placeholder implementation
-    }
-
-    @Override
-    public String getEndEvent() {
-        // Implement logic to extract the end event from the planDefinition
-        return "Extracted End Event"; // Placeholder implementation
-    }
+    }    
 
 }

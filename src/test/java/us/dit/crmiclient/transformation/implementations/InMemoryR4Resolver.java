@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.hl7.fhir.instance.model.api.IBaseResource;
 import org.hl7.fhir.r4.model.Attachment;
 import org.hl7.fhir.r4.model.Coding;
 import org.hl7.fhir.r4.model.Endpoint;
@@ -18,25 +19,16 @@ import us.dit.crmiclient.transformation.ResourceResolver;
 import org.hl7.fhir.r4.model.Resource;
 
 /**
- * Servidor CRMI simulado para los tests: guarda los recursos en memoria, por url canónica
+ * Servidor CRMI simulado para los tests: guarda los recursos en memoria, por
+ * url canónica
  * (PlanDefinition, Library) o por url de referencia (Endpoint).
  */
 class InMemoryR4Resolver implements ResourceResolver {
 
-    private final Map<String, Resource> resources = new HashMap<>();
+    private final Map<String, IBaseResource> resources = new HashMap<>();
 
-    @Override
-    public <T extends MetadataResource> T resolveCanonical(String canonical, Class<T> type) {
-        return find(canonical, type);
-    }
-
-    @Override
-    public <T extends Resource> T resolveReference(String url, Class<T> type) {
-        return find(url, type);
-    }
-
-    private <T extends Resource> T find(String url, Class<T> type) {
-        Resource resource = resources.get(url);
+    private <T extends IBaseResource> T find(String url, Class<T> type) {
+        IBaseResource resource = resources.get(url);
         return type.isInstance(resource) ? type.cast(resource) : null;
     }
 
@@ -46,7 +38,8 @@ class InMemoryR4Resolver implements ResourceResolver {
     }
 
     /**
-     * Da de alta un subproceso desplegado: su PlanDefinition, una Library por cada motor con un
+     * Da de alta un subproceso desplegado: su PlanDefinition, una Library por cada
+     * motor con un
      * BPMN cuyo process tiene la clave indicada, y el Endpoint de cada motor.
      *
      * @param engines pares tipo de motor / url del motor
@@ -92,5 +85,15 @@ class InMemoryR4Resolver implements ResourceResolver {
                   <process id="%s" isExecutable="true"/>
                 </definitions>
                 """.formatted(processKey).getBytes(StandardCharsets.UTF_8);
+    }
+
+    @Override
+    public <T extends IBaseResource> T resolveCanonical(String canonical, Class<T> type) {
+        return find(canonical, type);
+    }
+
+    @Override
+    public <T extends IBaseResource> T resolveReference(String url, Class<T> type) {
+        return find(url, type);
     }
 }

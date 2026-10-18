@@ -30,18 +30,21 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
     public R4Plan2FlowablePlanTransformer() {
         this.resolver = null;
         this.subprocessLocator = null;
+        
+        this.processWriter= new FlowableProcessWriter();
     }
 
     public R4Plan2FlowablePlanTransformer(ResourceResolver resolver) {
         this.resolver = resolver;
-        this.subprocessLocator = new R4SubprocessLocator(resolver, ENGINE_TYPE);
+        this.subprocessLocator = new R4SubprocessLocator(resolver, ENGINE_TYPE);        
+        this.processWriter= new FlowableProcessWriter();
+        
     }
 
     @Override
     public String Plan2Bpmn(String rawPlanDefinition) {
         logger.info("Iniciando transformación de PlanDefinition a BPMN");
         this.planReader=new R4PlanReader(rawPlanDefinition, resolver);
-        this.processWriter= new FlowableProcessWriter();
         // La lógica de transformación se descompone en pasos
         mapName();
         mapId();

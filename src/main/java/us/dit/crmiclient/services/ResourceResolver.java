@@ -1,9 +1,9 @@
-package us.dit.crmiclient.transformation;
+package us.dit.crmiclient.services;
 
 import org.hl7.fhir.instance.model.api.IBaseResource;
 
 /**
- * Obtiene recursos FHIR R4 del servidor CRMI. Separa al reader del acceso al servidor: el reader
+ * Obtiene recursos FHIR del servidor CRMI. Separa al reader del acceso al servidor: el reader
  * no hace peticiones, quien lo crea decide de dónde se sacan los recursos.
  */
 public interface ResourceResolver {

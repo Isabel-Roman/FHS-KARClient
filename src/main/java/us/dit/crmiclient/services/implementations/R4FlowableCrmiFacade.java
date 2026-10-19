@@ -20,11 +20,13 @@ import ca.uhn.fhir.rest.api.MethodOutcome;
 import ca.uhn.fhir.rest.client.api.IGenericClient;
 import ca.uhn.fhir.rest.client.api.ServerValidationModeEnum;
 import ca.uhn.fhir.rest.client.interceptor.LoggingInterceptor;
+
 import us.dit.crmiclient.model.dtos.DeploymentResult;
 import us.dit.crmiclient.model.dtos.PlanSearchFilter;
 import us.dit.crmiclient.model.dtos.PlanSummary;
 
 import us.dit.crmiclient.services.CrmiFacade;
+import us.dit.crmiclient.services.ResourceResolver;
 import us.dit.crmiclient.transformation.implementations.R4Plan2FlowablePlanTransformer;
 
 @Service
@@ -37,10 +39,13 @@ public class R4FlowableCrmiFacade implements CrmiFacade{
     private final FhirContext fhirContext = FhirContext.forR4();
     private final IGenericClient fhirClient;
 
-    public R4FlowableCrmiFacade(@Value("${crmiserver.url}") String serverUrl) {
+    ResourceResolver resolver;
+    @Service
+    public R4FlowableCrmiFacade(R4ResourceResolver resolver) {
+        this.resolver=resolver;
         // Evita que el cliente consulte /metadata antes de cada primera petición
-        fhirContext.getRestfulClientFactory().setServerValidationMode(ServerValidationModeEnum.NEVER);
-        this.fhirClient = fhirContext.newRestfulGenericClient(serverUrl);
+        //fhirContext.getRestfulClientFactory().setServerValidationMode(ServerValidationModeEnum.NEVER);
+        //this.fhirClient = fhirContext.newRestfulGenericClient(serverUrl);
 
         // Traza las peticiones y respuestas HTTP con el servidor CRMI (cabeceras y cuerpo)
         LoggingInterceptor loggingInterceptor = new LoggingInterceptor();
@@ -57,7 +62,7 @@ public class R4FlowableCrmiFacade implements CrmiFacade{
 
     @Override
     public void publishPlan(String rawPlanDefinition) {
-        ResourceResolver resolver = new ResourceResolver(fhirClient);
+      
         R4Plan2FlowablePlanTransformer transformer = new R4Plan2FlowablePlanTransformer();
         String bpmnModel = transformer.Plan2Bpmn(rawPlanDefinition);
         logger.debug("Modelo BPMN generado:\n{}", bpmnModel);

@@ -3,7 +3,7 @@ import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.BpmnWriter;
 import us.dit.crmiclient.transformation.PlanReader;
 import us.dit.crmiclient.transformation.PlanTransformer;
-import us.dit.crmiclient.transformation.ResourceResolver;
+import us.dit.crmiclient.services.ResourceResolver;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

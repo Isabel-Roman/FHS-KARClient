@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import us.dit.crmiclient.model.SubprocessDeployment;
 import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
-import us.dit.crmiclient.transformation.ResourceResolver;
+import us.dit.crmiclient.services.ResourceResolver;
 
 /**
  * Localiza, a partir del PlanDefinition de un subproceso, su despliegue en un tipo de motor.

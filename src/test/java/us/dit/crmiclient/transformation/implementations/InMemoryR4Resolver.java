@@ -14,7 +14,7 @@ import org.hl7.fhir.r4.model.PlanDefinition;
 import org.hl7.fhir.r4.model.RelatedArtifact;
 import org.hl7.fhir.r4.model.RelatedArtifact.RelatedArtifactType;
 
-import us.dit.crmiclient.transformation.ResourceResolver;
+import us.dit.crmiclient.services.ResourceResolver;
 
 import org.hl7.fhir.r4.model.Resource;
 

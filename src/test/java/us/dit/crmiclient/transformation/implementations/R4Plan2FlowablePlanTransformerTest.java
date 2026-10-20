@@ -31,8 +31,8 @@ class R4Plan2FlowablePlanTransformerTest {
                   "purpose": "Este es un plan sencillo para pruebas.",
                   "description": "Este plan tiene solo dos acciones paralelas.",
                   "usage": "Usar solo en entorno de tests.",
-                  "action": [{"id": "a","definitionCanonical": "https://hapi.fhir.org/baseR4/PlanDefinition/82074"},
-                  {"id": "b","definitionCanonical": "https://hapi.fhir.org/baseR4/Library/135582"}]
+                  "action": [{"id": "a","definitionCanonical": "https://hapi.fhir.org/baseR4/PlanDefinition/135587"},
+                  {"id": "b","definitionCanonical": "https://hapi.fhir.org/baseR4/PlanDefinition/135583"}]
                               }
                 """;
         ResourceResolver resolver = new R4ResourceResolver("https://hapi.fhir.org/baseR4");

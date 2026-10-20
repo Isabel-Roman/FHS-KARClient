@@ -2,6 +2,7 @@ package us.dit.crmiclient.services.implementations;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.UUID;
 
 import org.hl7.fhir.r4.model.Attachment;
 import org.hl7.fhir.r4.model.Bundle;
@@ -29,6 +30,8 @@ public class R4FlowableCrmiFacade implements CrmiFacade{
 
     private static final String LIBRARY_TYPE_SYSTEM = "http://terminology.hl7.org/CodeSystem/library-type";
     private static final String BPMN_CONTENT_TYPE = "application/bpmn+xml";
+    /** Versión de la Library cuando el plan no tiene versión */
+    private static final String FIRST_VERSION = "1.0.0";
 
     /** Solo para leer el JSON recibido; las peticiones al servidor las hace el resolver */
     private final FhirContext fhirContext = FhirContext.forR4();
@@ -51,28 +54,35 @@ public class R4FlowableCrmiFacade implements CrmiFacade{
         logger.debug("Modelo BPMN generado:\n{}", bpmnModel);
 
         PlanDefinition plan = fhirContext.newJsonParser().parseResource(PlanDefinition.class, rawPlanDefinition);
-        logger.debug("PlanDefinition leído: id={}, name={}", plan.getId(), plan.getName());
-        Library library = createLibrary(plan, bpmnModel);
-        logger.debug("Library creada: name={}, version={}", library.getName(), library.getVersion());
-        // La url de la Library publicada es la que se referencia desde PlanDefinition.library
-        String libraryUrl = resolver.publish(library);
-        plan.addLibrary(libraryUrl);
+        logger.debug("PlanDefinition leído: id={}, name={}, version={}", plan.getId(), plan.getName(), plan.getVersion());
+        // El id de la Library lo elegimos aquí para poder poner su url canónica antes de publicarla
+        String libraryId = UUID.randomUUID().toString();
+        Library library = createLibrary(plan, bpmnModel, libraryId);
+        logger.debug("Library creada: url={}, version={}", library.getUrl(), library.getVersion());
+        resolver.publish(library, libraryId);
+        // PlanDefinition.library es canónica: se referencia con versión para ligar el plan a esta Library
+        String libraryCanonical = library.getUrl() + "|" + library.getVersion();
+        plan.addLibrary(libraryCanonical);
         String planUrl = resolver.publish(plan);
-        logger.debug("PlanDefinition publicado en {} con la Library {}", planUrl, libraryUrl);
+        logger.debug("PlanDefinition publicado en {} con la Library {}", planUrl, libraryCanonical);
     }
 
     /**
      * Crea una Library que contiene el modelo BPMN generado a partir del PlanDefinition.
      * Los metadatos (versión, nombre...) se toman del propio PlanDefinition.
      */
-    private Library createLibrary(PlanDefinition plan, String bpmnModel) {
+    private Library createLibrary(PlanDefinition plan, String bpmnModel, String libraryId) {
         // Un plan nuevo puede no traer id: se usa el name, como en R4PlanReader.getId()
         String id = plan.getIdElement().hasIdPart() ? plan.getIdElement().getIdPart()
                 : plan.hasName() ? plan.getName() : "plan";
         logger.debug("Creando Library para el plan {}", id);
 
         Library library = new Library();
-        library.setVersion(plan.getVersion());
+        // Url canónica = url de la Library en el servidor donde se publica, para que el plan
+        // (y quien lo use como subproceso) la encuentre por canónica
+        library.setUrl(resolver.getServerUrl().replaceAll("/+$", "") + "/Library/" + libraryId);
+        // La Library se genera a partir del plan: misma versión, o la primera si el plan no tiene
+        library.setVersion(plan.hasVersion() ? plan.getVersion() : FIRST_VERSION);
         library.setName(plan.getName());
         library.setTitle(plan.getTitle());
         library.setDescription(plan.getDescription());

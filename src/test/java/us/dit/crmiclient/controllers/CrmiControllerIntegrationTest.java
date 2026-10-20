@@ -97,8 +97,10 @@ class CrmiControllerIntegrationTest {
         assertEquals(1, plans.getEntry().size());
         PlanDefinition plan = (PlanDefinition) plans.getEntryFirstRep().getResource();
         assertEquals(1, plan.getLibrary().size());
+        // La referencia es la canónica de la Library (su url en el servidor) con su versión
         String libraryRef = plan.getLibrary().get(0).getValue();
-        assertTrue(libraryRef.endsWith("/Library/" + library.getIdElement().getIdPart()),
+        assertEquals(SERVER_URL + "/Library/" + library.getIdElement().getIdPart(), library.getUrl());
+        assertEquals(library.getUrl() + "|" + library.getVersion(), libraryRef,
                 "PlanDefinition.library (" + libraryRef + ") no apunta a la Library creada");
     }
 }

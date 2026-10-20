@@ -115,4 +115,18 @@ public class R4ResourceResolver implements ResourceResolver {
         logger.info("Publicado {} con url {}", outcome.getId().getValue(), url);
         return url;
     }
+
+    /** PUT con el id dado: si no existe un recurso con ese id, el servidor lo crea */
+    @Override
+    public String publish(IBaseResource resource, String id) {
+        MethodOutcome outcome = fhirClient.update()
+                .resource(resource)
+                .withId(id)
+                .execute();
+        String serverBase = fhirClient.getServerBase().replaceAll("/+$", "");
+        String url = serverBase + "/" + fhirContext.getResourceType(resource) + "/" + id;
+        logger.info("Publicado {} con url {} ({})", outcome.getId().getValue(), url,
+                Boolean.TRUE.equals(outcome.getCreated()) ? "creado" : "actualizado");
+        return url;
+    }
 }

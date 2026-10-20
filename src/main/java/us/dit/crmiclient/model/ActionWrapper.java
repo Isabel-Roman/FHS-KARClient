@@ -1,5 +1,7 @@
 package us.dit.crmiclient.model;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -28,15 +30,17 @@ public class ActionWrapper<T> {
      */
     private String subprocessCanonical;
     /**
-     * Parámetros de entrada para la acción.
+     * Parámetros de entrada del subproceso que implementa la acción, por nombre, en el orden en
+     * que los declara su Library.
      * CONVENCIÓN: El id del parámetro de entrada en el bpmn es el id de la acción_key
      */
-    private Map<String, String> inParameters;
+    private Map<String, ParameterWrapper<?>> inParameters = new LinkedHashMap<>();
     /**
-     * Parámetros de salida para la acción.
+     * Parámetros de salida del subproceso que implementa la acción, por nombre, en el orden en
+     * que los declara su Library.
      * CONVENCIÓN: El id del parámetro de salida en el bpmn es el id de la acción_key
      */
-    private Map<String, String> outParameters;
+    private Map<String, ParameterWrapper<?>> outParameters = new LinkedHashMap<>();
 
     public ActionWrapper(T action) {
         this.action = action;
@@ -120,6 +124,21 @@ public class ActionWrapper<T> {
 
     public void setSubprocessCanonical(String subprocessCanonical) {
         this.subprocessCanonical = subprocessCanonical;
+    }
+
+    public Map<String, ParameterWrapper<?>> getInParameters() {
+        return Collections.unmodifiableMap(inParameters);
+    }
+
+    public Map<String, ParameterWrapper<?>> getOutParameters() {
+        return Collections.unmodifiableMap(outParameters);
+    }
+
+    /** Añade un parámetro a los de entrada o a los de salida, según su uso */
+    public void addParameter(ParameterWrapper<?> parameter) {
+        Map<String, ParameterWrapper<?>> target = parameter.getUse() == ParameterWrapper.Use.IN
+                ? inParameters : outParameters;
+        target.put(parameter.getName(), parameter);
     }
 
 }

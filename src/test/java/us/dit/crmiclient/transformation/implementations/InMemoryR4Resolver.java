@@ -109,4 +109,12 @@ class InMemoryR4Resolver implements ResourceResolver {
         resources.put(url, resource);
         return url;
     }
+
+    /** Guarda el recurso en memoria con la url {servidor}/{tipo}/{id} */
+    @Override
+    public String publish(IBaseResource resource, String id) {
+        String url = getServerUrl() + "/" + resource.getClass().getSimpleName() + "/" + id;
+        resources.put(url, resource);
+        return url;
+    }
 }

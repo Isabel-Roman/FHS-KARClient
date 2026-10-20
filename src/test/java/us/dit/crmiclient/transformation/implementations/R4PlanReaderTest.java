@@ -5,7 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
 import org.hl7.fhir.r4.model.CanonicalType;
+import org.hl7.fhir.r4.model.Library;
+import org.hl7.fhir.r4.model.ParameterDefinition.ParameterUse;
 import org.hl7.fhir.r4.model.PlanDefinition;
 import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionComponent;
 import org.junit.jupiter.api.Test;
@@ -14,6 +18,7 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.parser.IParser;
 
 import us.dit.crmiclient.model.ActionWrapper;
+import us.dit.crmiclient.model.ParameterWrapper;
 import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 
@@ -199,6 +204,102 @@ class R4PlanReaderTest {
     void rejectsActionWhoseDefinitionIsNotFound() {
         assertThrows(InvalidPlanDefinitionException.class,
                 () -> new R4PlanReader(PLAN_WITH_SUBPROCESS, new InMemoryR4Resolver()));
+    }
+
+    /** Parámetro R4 de Library */
+    private static org.hl7.fhir.r4.model.ParameterDefinition r4Parameter(String name, ParameterUse use, String type) {
+        return new org.hl7.fhir.r4.model.ParameterDefinition().setName(name).setUse(use).setType(type);
+    }
+
+    /** Library con los parámetros dados */
+    private static Library libraryWith(org.hl7.fhir.r4.model.ParameterDefinition... parameters) {
+        Library library = new Library();
+        for (org.hl7.fhir.r4.model.ParameterDefinition parameter : parameters) {
+            library.addParameter(parameter);
+        }
+        return library;
+    }
+
+    /** Resolver con SUBPLAN y una Library por cada elemento de libraries */
+    private static InMemoryR4Resolver crmiWithLibraries(Library... libraries) {
+        PlanDefinition subplan = new PlanDefinition();
+        InMemoryR4Resolver crmi = new InMemoryR4Resolver().add(SUBPLAN, subplan);
+        for (int i = 0; i < libraries.length; i++) {
+            String libraryCanonical = SUBPLAN + "-library-" + i;
+            subplan.addLibrary(libraryCanonical);
+            crmi.add(libraryCanonical, libraries[i]);
+        }
+        return crmi;
+    }
+
+    @Test
+    void readsInputAndOutputParametersFromLibrary() {
+        InMemoryR4Resolver crmi = crmiWithLibraries(libraryWith(
+                r4Parameter("paciente", ParameterUse.IN, "Patient").setMin(1).setMax("1")
+                        .setDocumentation("Paciente a notificar"),
+                r4Parameter("motivo", ParameterUse.IN, "string"),
+                r4Parameter("enviada", ParameterUse.OUT, "boolean")));
+        ActionWrapper<PlanDefinitionActionComponent> a = action(new R4PlanReader(PLAN_WITH_SUBPROCESS, crmi), "a");
+
+        assertEquals(List.of("paciente", "motivo"), List.copyOf(a.getInParameters().keySet()));
+        assertEquals(List.of("enviada"), List.copyOf(a.getOutParameters().keySet()));
+        ParameterWrapper<?> paciente = a.getInParameters().get("paciente");
+        assertEquals(ParameterWrapper.Use.IN, paciente.getUse());
+        assertEquals("Patient", paciente.getType());
+        assertEquals(1, paciente.getMin());
+        assertEquals("1", paciente.getMax());
+        assertEquals("Paciente a notificar", paciente.getDocumentation());
+        assertNull(paciente.getDefaultValue());
+        assertNull(paciente.getValue());
+        // El wrapper conserva la definición original de R4
+        assertEquals("Paciente a notificar",
+                ((org.hl7.fhir.r4.model.ParameterDefinition) paciente.getDefinition()).getDocumentation());
+        // Sin min ni max en la Library: opcional y sin máximo indicado
+        assertEquals(0, a.getInParameters().get("motivo").getMin());
+        assertNull(a.getInParameters().get("motivo").getMax());
+    }
+
+    @Test
+    void subprocessWithoutParametersIsValid() {
+        InMemoryR4Resolver crmi = crmiWithLibraries(libraryWith());
+        ActionWrapper<PlanDefinitionActionComponent> a = action(new R4PlanReader(PLAN_WITH_SUBPROCESS, crmi), "a");
+        assertTrue(a.getInParameters().isEmpty());
+        assertTrue(a.getOutParameters().isEmpty());
+    }
+
+    @Test
+    void joinsParametersOfTheLibrariesOfDifferentEngines() {
+        // Una Library por motor: el parámetro común aparece una vez
+        InMemoryR4Resolver crmi = crmiWithLibraries(
+                libraryWith(r4Parameter("paciente", ParameterUse.IN, "Patient")),
+                libraryWith(r4Parameter("paciente", ParameterUse.IN, "Patient"),
+                        r4Parameter("enviada", ParameterUse.OUT, "boolean")));
+        ActionWrapper<PlanDefinitionActionComponent> a = action(new R4PlanReader(PLAN_WITH_SUBPROCESS, crmi), "a");
+        assertEquals(List.of("paciente"), List.copyOf(a.getInParameters().keySet()));
+        assertEquals(List.of("enviada"), List.copyOf(a.getOutParameters().keySet()));
+    }
+
+    @Test
+    void rejectsParameterDeclaredDifferentlyInTwoLibraries() {
+        InMemoryR4Resolver crmi = crmiWithLibraries(
+                libraryWith(r4Parameter("paciente", ParameterUse.IN, "Patient")),
+                libraryWith(r4Parameter("paciente", ParameterUse.IN, "string")));
+        assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader(PLAN_WITH_SUBPROCESS, crmi));
+    }
+
+    @Test
+    void rejectsParameterWithoutUse() {
+        InMemoryR4Resolver crmi = crmiWithLibraries(
+                libraryWith(new org.hl7.fhir.r4.model.ParameterDefinition().setName("paciente").setType("Patient")));
+        assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader(PLAN_WITH_SUBPROCESS, crmi));
+    }
+
+    @Test
+    void rejectsLibraryNotFound() {
+        PlanDefinition subplan = new PlanDefinition();
+        subplan.addLibrary(SUBPLAN + "-library-inexistente");
+        InMemoryR4Resolver crmi = new InMemoryR4Resolver().add(SUBPLAN, subplan);
+        assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader(PLAN_WITH_SUBPROCESS, crmi));
     }
 
     /**

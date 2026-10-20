@@ -28,4 +28,14 @@ public interface ResourceResolver {
     <T extends IBaseResource> T resolveReference(String url, Class<T> type);
     String getServerUrl();
     String publish(IBaseResource resource);
+
+    /**
+     * Publica un recurso con un id elegido por el cliente (PUT [base]/{tipo}/{id}), en una sola
+     * petición. Permite rellenar antes de publicar campos que dependen del id, como una url
+     * canónica igual a la url del recurso en el servidor. El servidor debe admitir ids asignados
+     * por el cliente.
+     *
+     * @return url del recurso publicado, {servidor}/{tipo}/{id}, sin versión
+     */
+    String publish(IBaseResource resource, String id);
 }

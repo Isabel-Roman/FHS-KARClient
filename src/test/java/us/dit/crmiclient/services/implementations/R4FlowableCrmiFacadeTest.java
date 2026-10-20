@@ -85,5 +85,19 @@ class R4FlowableCrmiFacadeTest {
 
         String bpmn = new String(library.getContentFirstRep().getData(), StandardCharsets.UTF_8);
         assertTrue(bpmn.contains("<definitions"));
+
+        // La url canónica es la url de la Library en el servidor; el plan no tiene versión: 1.0.0
+        String libraryUrl = SERVER_URL + "/Library/" + library.getIdElement().getIdPart();
+        assertEquals(libraryUrl, library.getUrl());
+        assertEquals("1.0.0", library.getVersion());
+
+        // El plan referencia la Library por canónica con versión
+        Bundle plans = client.search()
+                .forResource(PlanDefinition.class)
+                .where(PlanDefinition.NAME.matchesExactly().value(planName))
+                .returnBundle(Bundle.class)
+                .execute();
+        PlanDefinition plan = (PlanDefinition) plans.getEntryFirstRep().getResource();
+        assertEquals(libraryUrl + "|1.0.0", plan.getLibrary().get(0).getValue());
     }
 }

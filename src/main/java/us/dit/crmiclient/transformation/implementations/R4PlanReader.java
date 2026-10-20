@@ -1,6 +1,7 @@
 package us.dit.crmiclient.transformation.implementations;
 
 import us.dit.crmiclient.model.ActionWrapper;
+import us.dit.crmiclient.model.ParameterWrapper;
 import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 import us.dit.crmiclient.transformation.PlanReader;
@@ -11,14 +12,19 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
 
 import ca.uhn.fhir.context.FhirContext;
+import org.hl7.fhir.r4.model.CanonicalType;
+import org.hl7.fhir.r4.model.Library;
+import org.hl7.fhir.r4.model.ParameterDefinition;
 import org.hl7.fhir.r4.model.PlanDefinition;
 import org.hl7.fhir.r4.model.PlanDefinition.ActionConditionKind;
 import org.hl7.fhir.r4.model.PlanDefinition.ActionRelationshipType;
@@ -423,7 +429,71 @@ public class R4PlanReader implements PlanReader {
             }
             wrapper.setSubprocessCanonical(canonical);
             logger.debug("A la acción {} se le añade la url canonica {}", wrapper.getId(), canonical);
+            solveSubprocessParameters(wrapper, definition, canonical);
         }
+    }
+
+    /**
+     * Añade al wrapper los parámetros de entrada y salida del subproceso, declarados en
+     * Library.parameter de las Library de su PlanDefinition.
+     * <p>
+     * El PlanDefinition puede tener una Library por tipo de motor; todas describen el mismo
+     * proceso, así que se juntan sus parámetros. Un mismo parámetro declarado en varias debe ser
+     * igual en todas (mismo uso y tipo); si no, el plan se rechaza. Un subproceso sin parámetros
+     * es válido. Las Library se obtienen del servidor a través del resolver.
+     */
+    private void solveSubprocessParameters(ActionWrapper<PlanDefinitionActionComponent> wrapper,
+            PlanDefinition definition, String canonical) {
+        Map<String, ParameterWrapper<ParameterDefinition>> found = new LinkedHashMap<>();
+        for (CanonicalType libraryCanonical : definition.getLibrary()) {
+            Library library = resolver.resolveCanonical(libraryCanonical.getValue(), Library.class);
+            if (library == null) {
+                throw new InvalidPlanDefinitionException("No se encuentra la Library " + libraryCanonical.getValue()
+                        + " del PlanDefinition " + canonical + " de la acción " + wrapper.getId());
+            }
+            for (ParameterDefinition r4Parameter : library.getParameter()) {
+                ParameterWrapper<ParameterDefinition> parameter = wrapParameter(r4Parameter, libraryCanonical.getValue());
+                ParameterWrapper<ParameterDefinition> previous = found.putIfAbsent(parameter.getName(), parameter);
+                if (previous != null && (previous.getUse() != parameter.getUse()
+                        || !Objects.equals(previous.getType(), parameter.getType()))) {
+                    throw new InvalidPlanDefinitionException("El parámetro " + parameter.getName()
+                            + " se declara de forma distinta en las Library del PlanDefinition " + canonical);
+                }
+            }
+        }
+        found.values().forEach(wrapper::addParameter);
+        logger.debug("La acción {} tiene los parámetros de entrada {} y de salida {}", wrapper.getId(),
+                wrapper.getInParameters().keySet(), wrapper.getOutParameters().keySet());
+    }
+
+    /**
+     * Envuelve un ParameterDefinition de R4, sacando fuera sus metadatos. En R4 no hay valor por
+     * defecto. El nombre y el uso son necesarios para enlazar el parámetro.
+     */
+    private static ParameterWrapper<ParameterDefinition> wrapParameter(ParameterDefinition r4Parameter,
+            String libraryCanonical) {
+        if (!r4Parameter.hasName() || r4Parameter.getName().isBlank()) {
+            throw new InvalidPlanDefinitionException("La Library " + libraryCanonical + " tiene un parámetro sin nombre");
+        }
+        // Sin use, getUse() devuelve null y el switch fallaría: se trata como NULL
+        ParameterDefinition.ParameterUse r4Use = r4Parameter.hasUse() ? r4Parameter.getUse()
+                : ParameterDefinition.ParameterUse.NULL;
+        ParameterWrapper.Use use = switch (r4Use) {
+            case IN -> ParameterWrapper.Use.IN;
+            case OUT -> ParameterWrapper.Use.OUT;
+            case NULL -> throw new InvalidPlanDefinitionException("El parámetro " + r4Parameter.getName()
+                    + " de la Library " + libraryCanonical + " no indica si es de entrada o de salida");
+        };
+        return new ParameterWrapper<>(
+                r4Parameter,
+                r4Parameter.getName(),
+                use,
+                r4Parameter.hasMin() ? r4Parameter.getMin() : 0,
+                r4Parameter.hasMax() ? r4Parameter.getMax() : null,
+                r4Parameter.hasType() ? r4Parameter.getType() : null,
+                r4Parameter.hasProfile() ? r4Parameter.getProfile() : null,
+                r4Parameter.hasDocumentation() ? r4Parameter.getDocumentation() : null,
+                null);
     }
 
     /** Acciones del plan, en el orden del documento */

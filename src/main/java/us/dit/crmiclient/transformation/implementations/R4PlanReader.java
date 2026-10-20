@@ -4,7 +4,7 @@ import us.dit.crmiclient.model.ActionWrapper;
 import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 import us.dit.crmiclient.transformation.PlanReader;
-import us.dit.crmiclient.transformation.ResourceResolver;
+import us.dit.crmiclient.services.ResourceResolver;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -407,12 +407,14 @@ public class R4PlanReader implements PlanReader {
                         + " no tiene definitionCanonical: toda acción debe tener un PlanDefinition asociado");
             }
             String canonical = action.getDefinitionCanonicalType().getValue();
+            logger.debug("Localizando el PlanDefinition {} que describe la acción {}", canonical, wrapper.getId());
             // Los PlanDefinition de las acciones están siempre en un servidor externo (CRMI)
             PlanDefinition definition = resolver.resolveCanonical(canonical, PlanDefinition.class);
             if (definition == null) {
                 throw new InvalidPlanDefinitionException("No se encuentra el PlanDefinition " + canonical
                         + " de la acción " + wrapper.getId());
             }
+            logger.debug("PlanDefinition {} de la acción {} encontrado", definition.getId(), wrapper.getId());
             // Sin versión en la referencia se fija la del plan encontrado, para que al localizar
             // el subproceso después se use el mismo que se ha validado aquí
             if (!canonical.contains("|") && definition.hasVersion()) {

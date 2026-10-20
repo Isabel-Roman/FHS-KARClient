@@ -25,6 +25,8 @@ import ca.uhn.fhir.rest.gclient.StringClientParam;
 class R4FlowableCrmiFacadeTest {
 
     private static final String SERVER_URL = "https://hapi.fhir.org/baseR4";
+    //private static final String SERVER_URL = "https://ait01.us.es/hapi/fhir";
+
 
     private IGenericClient client;
     // Nombre único por test para poder localizar (y borrar) los recursos creados en el servidor
@@ -65,11 +67,12 @@ class R4FlowableCrmiFacadeTest {
                             "status": "draft",
                             "purpose": "Este es un plan sencillo para pruebas.",
                             "description": "Este plan tiene solo evento de inicio y de fin.",
-                            "usage": "Usar solo en entorno de tests."
+                            "usage": "Usar solo en entorno de tests.",
+                            "action": [{"id": "a","definitionCanonical": "https://hapi.fhir.org/baseR4/PlanDefinition/82074"}]
                                         }
                               """.formatted(planName);
 
-        new R4FlowableCrmiFacade(SERVER_URL).publishPlan(rawPlan);
+        new R4FlowableCrmiFacade(new R4ResourceResolver(SERVER_URL)).publishPlan(rawPlan);
 
         Bundle result = client.search()
                 .forResource(Library.class)

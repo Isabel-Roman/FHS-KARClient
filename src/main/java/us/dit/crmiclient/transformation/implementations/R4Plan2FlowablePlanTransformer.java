@@ -25,18 +25,12 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
      * Localiza el despliegue en Flowable del subproceso de cada acción, a partir de la canónica que
      * deja el reader en el wrapper. Lo usará el mapeo de las acciones a tareas BPMN.
      */
-    private final R4SubprocessLocator subprocessLocator;
+    //private final R4SubprocessLocator subprocessLocator;
 
-    public R4Plan2FlowablePlanTransformer() {
-        this.resolver = null;
-        this.subprocessLocator = null;
-        
-        this.processWriter= new FlowableProcessWriter();
-    }
 
     public R4Plan2FlowablePlanTransformer(ResourceResolver resolver) {
         this.resolver = resolver;
-        this.subprocessLocator = new R4SubprocessLocator(resolver, ENGINE_TYPE);        
+        //this.subprocessLocator = new R4SubprocessLocator(resolver, ENGINE_TYPE);        
         this.processWriter= new FlowableProcessWriter();
         
     }
@@ -69,13 +63,17 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
         processWriter.setId(planId);
     }
     private void mapStart(){
+        logger.debug("Mapeando inicio del plan al proceso BPMN");
         // Implementar la lógica para mapear el inicio del plan al proceso BPMN
         SimpleGateway startGateway = planReader.getStartGateway();
+        logger.debug("Inicio del plan mapeado al gateway {}", startGateway==null?"sin startgateway":startGateway.getId());
         processWriter.setStartEvent(startGateway);
     }
     private void mapEnd(){
+        logger.debug("Mapeando final del plan al proceso BPMN");
         // Implementar la lógica para mapear el final del plan al proceso BPMN
         SimpleGateway endGateway = planReader.getEndGateway();
+        logger.debug("Final del plan mapeado al gateway {}", endGateway==null?"sin endgateway":endGateway.getId());
         processWriter.setEndEvent(endGateway);
     }
 

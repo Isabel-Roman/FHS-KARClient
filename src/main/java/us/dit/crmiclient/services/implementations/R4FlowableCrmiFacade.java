@@ -12,21 +12,15 @@ import org.hl7.fhir.r4.model.Library;
 import org.hl7.fhir.r4.model.PlanDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import ca.uhn.fhir.context.FhirContext;
-import ca.uhn.fhir.rest.api.MethodOutcome;
-import ca.uhn.fhir.rest.client.api.IGenericClient;
-import ca.uhn.fhir.rest.client.api.ServerValidationModeEnum;
-import ca.uhn.fhir.rest.client.interceptor.LoggingInterceptor;
 
 import us.dit.crmiclient.model.dtos.DeploymentResult;
 import us.dit.crmiclient.model.dtos.PlanSearchFilter;
 import us.dit.crmiclient.model.dtos.PlanSummary;
 
 import us.dit.crmiclient.services.CrmiFacade;
-import us.dit.crmiclient.services.ResourceResolver;
 import us.dit.crmiclient.transformation.implementations.R4Plan2FlowablePlanTransformer;
 
 @Service
@@ -36,74 +30,35 @@ public class R4FlowableCrmiFacade implements CrmiFacade{
     private static final String LIBRARY_TYPE_SYSTEM = "http://terminology.hl7.org/CodeSystem/library-type";
     private static final String BPMN_CONTENT_TYPE = "application/bpmn+xml";
 
+    /** Solo para leer el JSON recibido; las peticiones al servidor las hace el resolver */
     private final FhirContext fhirContext = FhirContext.forR4();
-    private final IGenericClient fhirClient;
 
-    ResourceResolver resolver;
-    @Service
+    /**
+     * Todo el acceso al servidor CRMI: resuelve los recursos de las acciones (para la
+     * transformación) y publica la Library y el PlanDefinition.
+     */
+    private final R4ResourceResolver resolver;
+
     public R4FlowableCrmiFacade(R4ResourceResolver resolver) {
-        this.resolver=resolver;
-        // Evita que el cliente consulte /metadata antes de cada primera petición
-        //fhirContext.getRestfulClientFactory().setServerValidationMode(ServerValidationModeEnum.NEVER);
-        //this.fhirClient = fhirContext.newRestfulGenericClient(serverUrl);
-
-        // Traza las peticiones y respuestas HTTP con el servidor CRMI (cabeceras y cuerpo)
-        LoggingInterceptor loggingInterceptor = new LoggingInterceptor();
-        loggingInterceptor.setLogger(logger);
-        loggingInterceptor.setLogRequestSummary(true);
-        loggingInterceptor.setLogRequestHeaders(true);
-        loggingInterceptor.setLogRequestBody(true);
-        loggingInterceptor.setLogResponseSummary(true);
-        loggingInterceptor.setLogResponseHeaders(true);
-        loggingInterceptor.setLogResponseBody(true);
-        this.fhirClient.registerInterceptor(loggingInterceptor);
-        logger.debug("Cliente FHIR configurado contra {}", serverUrl);
+        this.resolver = resolver;
     }
 
     @Override
     public void publishPlan(String rawPlanDefinition) {
-      
-        R4Plan2FlowablePlanTransformer transformer = new R4Plan2FlowablePlanTransformer();
+        // El transformer resuelve contra el servidor los PlanDefinition de las acciones
+        R4Plan2FlowablePlanTransformer transformer = new R4Plan2FlowablePlanTransformer(resolver);
         String bpmnModel = transformer.Plan2Bpmn(rawPlanDefinition);
         logger.debug("Modelo BPMN generado:\n{}", bpmnModel);
-        
+
         PlanDefinition plan = fhirContext.newJsonParser().parseResource(PlanDefinition.class, rawPlanDefinition);
         logger.debug("PlanDefinition leído: id={}, name={}", plan.getId(), plan.getName());
         Library library = createLibrary(plan, bpmnModel);
         logger.debug("Library creada: name={}, version={}", library.getName(), library.getVersion());
-        String libraryCanonical = publishLibrary(library);
-        logger.debug("URL canónica de la Library: {}", libraryCanonical);
-        plan.addLibrary(libraryCanonical);
-        String planId=publishPlan(plan);       
-        logger.debug("ID del PlanDefinition publicado: {}", planId);
-    }
-    /**
-     * Publica un plandefinition en el servidor crmi
-     * @param plan
-     */
-    private String publishPlan(PlanDefinition plan) {
-        MethodOutcome outcome = fhirClient.create()
-                .resource(plan)
-                .execute();
-        logger.info("PlanDefinition publicado: {}", outcome.getId().getValue());
-        return outcome.getId().getIdPart();
-    }
-
-    /**
-     * Publica la Library en el servidor CRMI (POST Library). El servidor asigna el id
-     * y con él se compone la url: {servidor}/Library/{id}.
-     * @return url de la Library publicada, para referenciarla desde PlanDefinition.library
-     */
-    private String publishLibrary(Library library) {
-        MethodOutcome outcome = fhirClient.create()
-                .resource(library)
-                .execute();
-        // getIdPart descarta la versión (_history/n) que devuelve el servidor
-        String id = outcome.getId().getIdPart();
-        String serverBase = fhirClient.getServerBase().replaceAll("/+$", "");
-        String libraryUrl = serverBase + "/Library/" + id;
-        logger.info("Library publicada: {} con url {}", outcome.getId().getValue(), libraryUrl);
-        return libraryUrl;
+        // La url de la Library publicada es la que se referencia desde PlanDefinition.library
+        String libraryUrl = resolver.publish(library);
+        plan.addLibrary(libraryUrl);
+        String planUrl = resolver.publish(plan);
+        logger.debug("PlanDefinition publicado en {} con la Library {}", planUrl, libraryUrl);
     }
 
     /**

@@ -75,7 +75,7 @@ public class FlowableProcessWriter implements BpmnWriter {
             process.addFlowElement(gateway);
             logger.debug("Añadido gateway de inicio {}", gateway.getId());
             addSequenceFlow(start.getId(), gateway.getId());
-        }
+        }else{logger.debug("No hay gateway de inicio, ninguna o solo una acción");}
     }
 
     
@@ -112,7 +112,7 @@ public class FlowableProcessWriter implements BpmnWriter {
             process.addFlowElement(gateway);
             logger.debug("Añadido gateway de fin {}", gateway.getId());
             addSequenceFlow(gateway.getId(), end.getId());
-        }
+        }else{logger.debug("No hay gateway de fin, ninguna o una unica acción");}
         process.addFlowElement(end);
     }
 

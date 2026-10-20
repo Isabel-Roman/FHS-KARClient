@@ -96,4 +96,17 @@ class InMemoryR4Resolver implements ResourceResolver {
     public <T extends IBaseResource> T resolveReference(String url, Class<T> type) {
         return find(url, type);
     }
+
+    @Override
+    public String getServerUrl() {
+        return "http://crmi.ejemplo/fhir";
+    }
+
+    /** Guarda el recurso en memoria con una url {servidor}/{tipo}/{n} */
+    @Override
+    public String publish(IBaseResource resource) {
+        String url = getServerUrl() + "/" + resource.getClass().getSimpleName() + "/" + (resources.size() + 1);
+        resources.put(url, resource);
+        return url;
+    }
 }

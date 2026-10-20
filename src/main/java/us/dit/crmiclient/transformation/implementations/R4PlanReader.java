@@ -398,6 +398,7 @@ public class R4PlanReader implements PlanReader {
      * El reader no depende del motor: dónde y cómo arrancar el subproceso (su Library y Endpoint
      * para un tipo de motor) lo resuelve el transformer de cada motor con {@link R4SubprocessLocator}.
      * Pendiente: los parámetros de invocación, que se obtendrán de dynamicValue.
+     * TENGO QUE LEER TODO LO QUE ME INTERESE DEL PLANDEFINITION DE LA ACCIÓN Y PONERLO AQUÍ...
      */
     private void solveSubprocessesCalls() {
         for (ActionWrapper<PlanDefinitionActionComponent> wrapper : actions) {
@@ -421,7 +422,7 @@ public class R4PlanReader implements PlanReader {
                 canonical = canonical + "|" + definition.getVersion();
             }
             wrapper.setSubprocessCanonical(canonical);
-            logger.debug("La acción {} se implementa con el PlanDefinition {}", wrapper.getId(), canonical);
+            logger.debug("A la acción {} se le añade la url canonica {}", wrapper.getId(), canonical);
         }
     }
 

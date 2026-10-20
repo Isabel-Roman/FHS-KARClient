@@ -1,5 +1,6 @@
 package us.dit.crmiclient.model;
 
+import java.util.Map;
 import java.util.Set;
 
 
@@ -26,6 +27,16 @@ public class ActionWrapper<T> {
      * de ella, el transformer de cada motor localiza dónde y cómo arrancarlo.
      */
     private String subprocessCanonical;
+    /**
+     * Parámetros de entrada para la acción.
+     * CONVENCIÓN: El id del parámetro de entrada en el bpmn es el id de la acción_key
+     */
+    private Map<String, String> inParameters;
+    /**
+     * Parámetros de salida para la acción.
+     * CONVENCIÓN: El id del parámetro de salida en el bpmn es el id de la acción_key
+     */
+    private Map<String, String> outParameters;
 
     public ActionWrapper(T action) {
         this.action = action;

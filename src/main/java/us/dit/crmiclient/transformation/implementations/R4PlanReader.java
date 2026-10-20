@@ -29,6 +29,7 @@ import org.hl7.fhir.r4.model.PlanDefinition;
 import org.hl7.fhir.r4.model.PlanDefinition.ActionConditionKind;
 import org.hl7.fhir.r4.model.PlanDefinition.ActionRelationshipType;
 import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionComponent;
+import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionDynamicValueComponent;
 import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionRelatedActionComponent;
 
 import org.slf4j.Logger;
@@ -430,6 +431,48 @@ public class R4PlanReader implements PlanReader {
             wrapper.setSubprocessCanonical(canonical);
             logger.debug("A la acción {} se le añade la url canonica {}", wrapper.getId(), canonical);
             solveSubprocessParameters(wrapper, definition, canonical);
+            solveParameterValues(wrapper);
+        }
+    }
+
+    /**
+     * Asigna a los parámetros de entrada del subproceso los valores de los dynamicValue de la
+     * acción.
+     * <p>
+     * CONVENCIÓN: dynamicValue.path es el nombre del parámetro de entrada, y su expression es el
+     * valor que recibe (se guarda la Expression tal cual, sin evaluar).
+     * <p>
+     * El plan se rechaza si un dynamicValue no tiene path o expression, si su path no es un
+     * parámetro de entrada (un error de escritura dejaría el parámetro sin valor sin avisar), si
+     * se asigna dos veces el mismo parámetro, o si queda sin valor un parámetro obligatorio
+     * (min mayor que 0) que no tiene valor por defecto.
+     */
+    private void solveParameterValues(ActionWrapper<PlanDefinitionActionComponent> wrapper) {
+        for (PlanDefinitionActionDynamicValueComponent dynamicValue : wrapper.getAction().getDynamicValue()) {
+            if (!dynamicValue.hasPath() || dynamicValue.getPath().isBlank() || !dynamicValue.hasExpression()) {
+                throw new InvalidPlanDefinitionException("La acción " + wrapper.getId()
+                        + " tiene un dynamicValue sin path o sin expression");
+            }
+            String name = dynamicValue.getPath();
+            ParameterWrapper<?> parameter = wrapper.getInParameters().get(name);
+            if (parameter == null) {
+                throw new InvalidPlanDefinitionException("El dynamicValue " + name + " de la acción " + wrapper.getId()
+                        + " no corresponde a ningún parámetro de entrada de su subproceso "
+                        + wrapper.getSubprocessCanonical());
+            }
+            if (parameter.getValue() != null) {
+                throw new InvalidPlanDefinitionException("La acción " + wrapper.getId()
+                        + " asigna más de un valor al parámetro " + name);
+            }
+            parameter.setValue(dynamicValue.getExpression());
+            logger.debug("La acción {} asigna al parámetro {} el valor {}", wrapper.getId(), name,
+                    dynamicValue.getExpression().getExpression());
+        }
+        for (ParameterWrapper<?> parameter : wrapper.getInParameters().values()) {
+            if (parameter.getMin() > 0 && parameter.getValue() == null && parameter.getDefaultValue() == null) {
+                throw new InvalidPlanDefinitionException("La acción " + wrapper.getId()
+                        + " no da valor al parámetro obligatorio " + parameter.getName() + " de su subproceso");
+            }
         }
     }
 
@@ -484,7 +527,7 @@ public class R4PlanReader implements PlanReader {
             case NULL -> throw new InvalidPlanDefinitionException("El parámetro " + r4Parameter.getName()
                     + " de la Library " + libraryCanonical + " no indica si es de entrada o de salida");
         };
-        return new ParameterWrapper<>(
+        ParameterWrapper<ParameterDefinition> parameter = new ParameterWrapper<>(
                 r4Parameter,
                 r4Parameter.getName(),
                 use,
@@ -494,7 +537,11 @@ public class R4PlanReader implements PlanReader {
                 r4Parameter.hasProfile() ? r4Parameter.getProfile() : null,
                 r4Parameter.hasDocumentation() ? r4Parameter.getDocumentation() : null,
                 null);
+        logger.debug("ParameterWrapper creado={}", parameter);
+        return parameter;
     }
+       
+    
 
     /** Acciones del plan, en el orden del documento */
     public Set<ActionWrapper<PlanDefinitionActionComponent>> getActions() {

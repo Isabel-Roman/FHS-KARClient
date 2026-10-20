@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 
 import org.hl7.fhir.r4.model.CanonicalType;
+import org.hl7.fhir.r4.model.Expression;
 import org.hl7.fhir.r4.model.Library;
 import org.hl7.fhir.r4.model.ParameterDefinition.ParameterUse;
 import org.hl7.fhir.r4.model.PlanDefinition;
@@ -239,7 +240,9 @@ class R4PlanReaderTest {
                         .setDocumentation("Paciente a notificar"),
                 r4Parameter("motivo", ParameterUse.IN, "string"),
                 r4Parameter("enviada", ParameterUse.OUT, "boolean")));
-        ActionWrapper<PlanDefinitionActionComponent> a = action(new R4PlanReader(PLAN_WITH_SUBPROCESS, crmi), "a");
+        // paciente es obligatorio (min 1): la acción tiene que darle valor
+        ActionWrapper<PlanDefinitionActionComponent> a =
+                action(new R4PlanReader(planWithDynamicValues("paciente", "%subject"), crmi), "a");
 
         assertEquals(List.of("paciente", "motivo"), List.copyOf(a.getInParameters().keySet()));
         assertEquals(List.of("enviada"), List.copyOf(a.getOutParameters().keySet()));
@@ -250,7 +253,7 @@ class R4PlanReaderTest {
         assertEquals("1", paciente.getMax());
         assertEquals("Paciente a notificar", paciente.getDocumentation());
         assertNull(paciente.getDefaultValue());
-        assertNull(paciente.getValue());
+        assertEquals("%subject", ((Expression) paciente.getValue()).getExpression());
         // El wrapper conserva la definición original de R4
         assertEquals("Paciente a notificar",
                 ((org.hl7.fhir.r4.model.ParameterDefinition) paciente.getDefinition()).getDocumentation());
@@ -300,6 +303,75 @@ class R4PlanReaderTest {
         subplan.addLibrary(SUBPLAN + "-library-inexistente");
         InMemoryR4Resolver crmi = new InMemoryR4Resolver().add(SUBPLAN, subplan);
         assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader(PLAN_WITH_SUBPROCESS, crmi));
+    }
+
+    /**
+     * Plan con una única acción "a" cuyo PlanDefinition es SUBPLAN, con un dynamicValue por cada
+     * par path / expresión FHIRPath
+     */
+    private static String planWithDynamicValues(String... pathsAndExpressions) {
+        StringBuilder dynamicValues = new StringBuilder();
+        for (int i = 0; i < pathsAndExpressions.length; i += 2) {
+            dynamicValues.append(i == 0 ? "" : ", ").append("""
+                    {"path": "%s", "expression": {"language": "text/fhirpath", "expression": "%s"}}"""
+                    .formatted(pathsAndExpressions[i], pathsAndExpressions[i + 1]));
+        }
+        return """
+                {"resourceType": "PlanDefinition", "name": "ConValores",
+                 "action": [{"id": "a", "definitionCanonical": "%s", "dynamicValue": [%s]}]}
+                """.formatted(SUBPLAN, dynamicValues);
+    }
+
+    /** Resolver con SUBPLAN y una Library con un parámetro obligatorio, uno opcional y uno de salida */
+    private static InMemoryR4Resolver crmiWithNotificationParameters() {
+        return crmiWithLibraries(libraryWith(
+                r4Parameter("paciente", ParameterUse.IN, "Patient").setMin(1),
+                r4Parameter("motivo", ParameterUse.IN, "string"),
+                r4Parameter("enviada", ParameterUse.OUT, "boolean")));
+    }
+
+    @Test
+    void dynamicValuesBecomeValuesOfInputParameters() {
+        String plan = planWithDynamicValues("paciente", "%subject", "motivo", "'revisión'");
+        ActionWrapper<PlanDefinitionActionComponent> a =
+                action(new R4PlanReader(plan, crmiWithNotificationParameters()), "a");
+
+        Expression paciente = (Expression) a.getInParameters().get("paciente").getValue();
+        assertEquals("text/fhirpath", paciente.getLanguage());
+        assertEquals("%subject", paciente.getExpression());
+        assertEquals("'revisión'", ((Expression) a.getInParameters().get("motivo").getValue()).getExpression());
+        assertNull(a.getOutParameters().get("enviada").getValue());
+    }
+
+    @Test
+    void optionalParameterMayHaveNoValue() {
+        String plan = planWithDynamicValues("paciente", "%subject");
+        ActionWrapper<PlanDefinitionActionComponent> a =
+                action(new R4PlanReader(plan, crmiWithNotificationParameters()), "a");
+        assertNull(a.getInParameters().get("motivo").getValue());
+    }
+
+    @Test
+    void rejectsRequiredParameterWithoutValue() {
+        String plan = planWithDynamicValues("motivo", "'revisión'");
+        assertThrows(InvalidPlanDefinitionException.class,
+                () -> new R4PlanReader(plan, crmiWithNotificationParameters()));
+    }
+
+    @Test
+    void rejectsDynamicValueThatIsNotAnInputParameter() {
+        // "pacinte" mal escrito, y "enviada" es de salida
+        assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader(
+                planWithDynamicValues("paciente", "%subject", "pacinte", "%subject"), crmiWithNotificationParameters()));
+        assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader(
+                planWithDynamicValues("paciente", "%subject", "enviada", "true"), crmiWithNotificationParameters()));
+    }
+
+    @Test
+    void rejectsTwoValuesForTheSameParameter() {
+        String plan = planWithDynamicValues("paciente", "%subject", "paciente", "%patient");
+        assertThrows(InvalidPlanDefinitionException.class,
+                () -> new R4PlanReader(plan, crmiWithNotificationParameters()));
     }
 
     /**

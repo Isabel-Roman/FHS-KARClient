@@ -4,6 +4,7 @@ import us.dit.crmiclient.transformation.BpmnWriter;
 import us.dit.crmiclient.transformation.PlanReader;
 import us.dit.crmiclient.transformation.PlanTransformer;
 import us.dit.crmiclient.services.ResourceResolver;
+import us.dit.crmiclient.model.ActionWrapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,9 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
         mapId();
         mapDocumentation();
         String next = mapStart();
+        for(ActionWrapper<PlanDefinitionActionComponent> action : planReader.getFirstsActions()){
+            next = processWriter.setServiceTask(action, ENGINE_TYPE, next);
+        }
         mapEnd(next);
         logger.info("Transformación completada para el plan {}", planReader.getId());
         return processWriter.getModel();

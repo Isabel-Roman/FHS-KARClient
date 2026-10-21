@@ -22,18 +22,45 @@ class R4Plan2FlowablePlanTransformerTest {
 
     @Test
     void simplePlan2Bpmn() throws Exception {
+
         String SIMPLE_PLAN = """
-                {
-                  "resourceType": "PlanDefinition",
-                  "id": "plan-sencillo",
-                  "name": "PlanSencillo",
-                  "status": "draft",
-                  "purpose": "Este es un plan sencillo para pruebas.",
-                  "description": "Este plan tiene solo dos acciones paralelas.",
-                  "usage": "Usar solo en entorno de tests.",
-                  "action": [{"id": "a","definitionCanonical": "https://hapi.fhir.org/baseR4/PlanDefinition/135587"},
-                  {"id": "b","definitionCanonical": "https://hapi.fhir.org/baseR4/PlanDefinition/135583"}]
-                              }
+               {
+  "resourceType": "PlanDefinition",
+  "id": "plan-sencillo",
+  "name": "PlanSencillo",
+  "status": "draft",
+  "purpose": "Este es un plan sencillo para pruebas.",
+  "description": "Este plan tiene solo dos acciones paralelas.",
+  "usage": "Usar solo en entorno de tests.",
+  "action": [
+    {
+      "id": "a",
+      "definitionCanonical": "https://hapi.fhir.org/baseR4/PlanDefinition/135587",
+      "dynamicValue": [
+        {
+          "path": "inputStringParamName",
+          "expression": {
+            "language": "text/fhirpath",
+            "expression": "'PARAM-TESTa'"
+          }
+        }
+      ]
+    },
+    {
+      "id": "b",
+      "definitionCanonical": "https://hapi.fhir.org/baseR4/PlanDefinition/135583",
+      "dynamicValue": [
+        {
+          "path": "inputStringParamName",
+          "expression": {
+            "language": "text/fhirpath",
+            "expression": "'PARAM-TESTb'"
+          }
+        }
+      ]
+    }
+  ]
+}
                 """;
         ResourceResolver resolver = new R4ResourceResolver("https://hapi.fhir.org/baseR4");
         String xml = new R4Plan2FlowablePlanTransformer(resolver).Plan2Bpmn(SIMPLE_PLAN);

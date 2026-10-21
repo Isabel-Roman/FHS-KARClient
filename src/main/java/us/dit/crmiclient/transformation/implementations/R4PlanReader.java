@@ -93,6 +93,10 @@ public class R4PlanReader implements PlanReader {
     private static final Logger logger = LoggerFactory.getLogger(R4PlanReader.class);
     private final PlanDefinition plan;
     private String generatedId;
+    // Lista de acciones que no tienen anteriores para el gateway de inicio
+    private List<ActionWrapper<PlanDefinitionActionComponent>> firsts=null;
+    //Lista de acciones sin siguientes para el gateway de fin
+    private List<ActionWrapper<PlanDefinitionActionComponent>> lasts=null;
 
     /** LinkedHashSet para conservar el orden de las acciones en el documento */
     private Set<ActionWrapper<PlanDefinitionActionComponent>> actions;
@@ -218,9 +222,9 @@ public class R4PlanReader implements PlanReader {
         // solo se llega a ellas a través de acciones con condición
         Set<ActionWrapper<PlanDefinitionActionComponent>> mayNotRun = findActionsThatMayNotRun();
         // Lista de acciones que no tienen anteriores para el gateway de inicio
-        List<ActionWrapper<PlanDefinitionActionComponent>> firsts = new ArrayList<>();
+        firsts = new ArrayList<>();
         // Lista de acciones que no tienen siguientes para el gateway de fin
-        List<ActionWrapper<PlanDefinitionActionComponent>> lasts = new ArrayList<>();
+        lasts = new ArrayList<>();
         for (ActionWrapper<PlanDefinitionActionComponent> wrapper : actions) {
             if (wrapper.isFirst()) {
                 firsts.add(wrapper);
@@ -641,6 +645,18 @@ public class R4PlanReader implements PlanReader {
     private static String toBpmnId(String name) {
         String id = name.trim().replaceAll("[^A-Za-z0-9_.-]", "_");
         return id.matches("^[A-Za-z_].*") ? id : "_" + id;
+    }
+
+    @Override
+    public List<ActionWrapper<PlanDefinitionActionComponent>> getFirstsActions() {
+        return firsts;
+       
+        
+    }
+
+    @Override
+    public List<ActionWrapper<PlanDefinitionActionComponent>>> getLastsActions() {
+        return lasts;
     }    
 
 }

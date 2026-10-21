@@ -32,6 +32,10 @@ import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionComponent;
 import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionDynamicValueComponent;
 import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionRelatedActionComponent;
 
+import org.jgrapht.Graphs;
+import org.jgrapht.alg.TransitiveReduction;
+import org.jgrapht.graph.DefaultEdge;
+import org.jgrapht.graph.DirectedAcyclicGraph;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,6 +121,13 @@ public class R4PlanReader implements PlanReader {
 
     /** Obtiene del servidor CRMI los PlanDefinition de las acciones */
     private final ResourceResolver resolver;
+    /**
+     * Grafo de dependencias entre acciones: una arista A→B significa que A va antes que B. Es
+     * acíclico (DirectedAcyclicGraph rechaza las aristas que cerrarían un ciclo) y se recorre
+     * en orden topológico. Es un detalle interno del reader: no se expone fuera.
+     */
+    private final DirectedAcyclicGraph<ActionWrapper<PlanDefinitionActionComponent>, DefaultEdge> dependencies =
+            new DirectedAcyclicGraph<>(DefaultEdge.class);
 
     /**
      * Reader sin acceso a servidor: no resuelve ningún recurso, así que solo sirve para
@@ -168,7 +179,6 @@ public class R4PlanReader implements PlanReader {
                         + action.getTitle()
                         + "') tiene acciones anidadas, no soportadas: todas las acciones deben ser de primer nivel");
             }
-            ActionWrapper<PlanDefinitionActionComponent> wrapper = new ActionWrapper<>(action);
             String bpmnId;
             if (fhirId == null || fhirId.isBlank()) {
                 bpmnId = "action_" + index;
@@ -177,7 +187,6 @@ public class R4PlanReader implements PlanReader {
                 if (actionsByFhirId.containsKey(fhirId)) {
                     throw new InvalidPlanDefinitionException("Id de acción duplicado en el PlanDefinition: " + fhirId);
                 }
-                actionsByFhirId.put(fhirId, wrapper);
                 bpmnId = toBpmnId(fhirId);
             }
             // El saneado puede hacer coincidir ids distintos ("a b" y "a_b"), o con uno
@@ -189,10 +198,15 @@ public class R4PlanReader implements PlanReader {
             if (!uniqueId.equals(bpmnId)) {
                 logger.warn("El id BPMN {} de la acción {} ya existe, se usa {}", bpmnId, fhirId, uniqueId);
             }
-            wrapper.setId(uniqueId);
+            // El id se fija al crear el wrapper: es su identidad como nodo del grafo y no puede cambiar
+            ActionWrapper<PlanDefinitionActionComponent> wrapper = new ActionWrapper<>(action, uniqueId);
+            if (fhirId != null && !fhirId.isBlank()) {
+                actionsByFhirId.put(fhirId, wrapper);
+            }
             // Nombre visible de la acción: su title, o su id si no tiene
             wrapper.setName(action.hasTitle() ? action.getTitle() : uniqueId);
             actions.add(wrapper);
+            dependencies.addVertex(wrapper);
         }
     }
 
@@ -225,33 +239,35 @@ public class R4PlanReader implements PlanReader {
         firsts = new ArrayList<>();
         // Lista de acciones que no tienen siguientes para el gateway de fin
         lasts = new ArrayList<>();
+        // Se recorren en el orden del documento, para que firsts y lasts lo conserven
         for (ActionWrapper<PlanDefinitionActionComponent> wrapper : actions) {
-            if (wrapper.isFirst()) {
+            Set<ActionWrapper<PlanDefinitionActionComponent>> next = successors(wrapper);
+            Set<ActionWrapper<PlanDefinitionActionComponent>> previous = predecessors(wrapper);
+            if (previous.isEmpty()) {
                 firsts.add(wrapper);
             }
-            if (wrapper.isLast()) {
+            if (next.isEmpty()) {
                 lasts.add(wrapper);
             }
             // Si la acción no es la última, y tiene varias siguientes, o alguna siguiente
             // tiene condición applicability, necesita un split
-            if (!wrapper.isLast()) {
-                SimpleGateway.GatewayType outGatewayType = solveSplitType(wrapper.getNext());
+            if (!next.isEmpty()) {
+                SimpleGateway.GatewayType outGatewayType = solveSplitType(next);
                 if (outGatewayType != null) {
                     // Split: entra desde la acción y sale hacia sus siguientes
                     SimpleGateway split = new SimpleGateway("gw_out_" + wrapper.getId(), outGatewayType);
                     split.addIncomingAction(wrapper);
-                    wrapper.getNext().forEach(split::addOutgoingAction);
+                    next.forEach(split::addOutgoingAction);
                     wrapper.setOutGateway(split);
                 }
             }
             // Si la acción no es la primera y tiene más de una anterior, necesita un join.
             // Si alguna de las acciones anteriores puede no ejecutarse, el join debe ser
             // OR, si no, AND
-            if (!wrapper.isFirst() && wrapper.getPrevious().size() > 1) {
+            if (previous.size() > 1) {
                 // Join: entra desde las anteriores de la acción y sale hacia la acción
-                SimpleGateway join = new SimpleGateway("gw_in_" + wrapper.getId(),
-                        solveJoinType(wrapper.getPrevious(), mayNotRun));
-                wrapper.getPrevious().forEach(join::addIncomingAction);
+                SimpleGateway join = new SimpleGateway("gw_in_" + wrapper.getId(), solveJoinType(previous, mayNotRun));
+                previous.forEach(join::addIncomingAction);
                 join.addOutgoingAction(wrapper);
                 wrapper.setInGateway(join);
             }
@@ -330,8 +346,8 @@ public class R4PlanReader implements PlanReader {
      * en cascada, las
      * que solo pueden alcanzarse a través de ellas (todas sus anteriores pueden no
      * ejecutarse).
-     * Se calcula como punto fijo iterando hasta que no cambia, lo que termina
-     * aunque haya ciclos.
+     * Se calcula en una sola pasada recorriendo el grafo en orden topológico: cuando se
+     * llega a una acción ya se han visitado todas sus anteriores.
      * Supone que si no se cumple la condición de una acción tampoco se ejecuta su
      * rama: es la
      * semántica natural en BPMN, pero está pendiente de revisar en la gestión de
@@ -339,23 +355,27 @@ public class R4PlanReader implements PlanReader {
      */
     private Set<ActionWrapper<PlanDefinitionActionComponent>> findActionsThatMayNotRun() {
         Set<ActionWrapper<PlanDefinitionActionComponent>> mayNotRun = new HashSet<>();
-        for (ActionWrapper<PlanDefinitionActionComponent> wrapper : actions) {
-            if (hasApplicabilityCondition(wrapper.getAction())) {
+        // El iterador de DirectedAcyclicGraph recorre los vértices en orden topológico
+        for (ActionWrapper<PlanDefinitionActionComponent> wrapper : dependencies) {
+            Set<ActionWrapper<PlanDefinitionActionComponent>> previous = predecessors(wrapper);
+            if (hasApplicabilityCondition(wrapper.getAction())
+                    || (!previous.isEmpty() && mayNotRun.containsAll(previous))) {
                 mayNotRun.add(wrapper);
             }
         }
-        boolean changed = true;
-        while (changed) {
-            changed = false;
-            for (ActionWrapper<PlanDefinitionActionComponent> wrapper : actions) {
-                if (!mayNotRun.contains(wrapper) && !wrapper.isFirst()
-                        && mayNotRun.containsAll(wrapper.getPrevious())) {
-                    mayNotRun.add(wrapper);
-                    changed = true;
-                }
-            }
-        }
         return mayNotRun;
+    }
+
+    /** Acciones que van inmediatamente después de la dada, según el grafo de dependencias */
+    private Set<ActionWrapper<PlanDefinitionActionComponent>> successors(
+            ActionWrapper<PlanDefinitionActionComponent> wrapper) {
+        return new LinkedHashSet<>(Graphs.successorListOf(dependencies, wrapper));
+    }
+
+    /** Acciones que van inmediatamente antes de la dada, según el grafo de dependencias */
+    private Set<ActionWrapper<PlanDefinitionActionComponent>> predecessors(
+            ActionWrapper<PlanDefinitionActionComponent> wrapper) {
+        return new LinkedHashSet<>(Graphs.predecessorListOf(dependencies, wrapper));
     }
 
     private static boolean hasApplicabilityCondition(PlanDefinitionActionComponent action) {
@@ -364,9 +384,17 @@ public class R4PlanReader implements PlanReader {
     }
 
     /**
-     * Implementa ordenación de las acciones del plan, para completar la información
-     * de la lista de ActionWrappers con los metadatos necesarios para la gestión de
-     * las acciones y su manipulación en una estructura de lista enlazada.
+     * Construye el grafo de dependencias entre acciones a partir de sus relatedAction: una
+     * arista A→B significa que A va antes que B.
+     * <ul>
+     * <li>Un ciclo (A antes que B y B antes que A, directa o indirectamente) no se puede
+     * convertir en un proceso: el plan se rechaza.</li>
+     * <li>Se aplica la reducción transitiva: si A→B→C y además A→C, la arista A→C sobra (ya
+     * está implícita) y daría un split y un join innecesarios.</li>
+     * </ul>
+     * Las relaciones de concurrencia no son de orden: no entran en el grafo y se guardan en
+     * los wrappers. Al final se copian a los wrappers las anteriores y siguientes del grafo
+     * reducido, mientras el resto del código las siga usando.
      */
     private void shortActions() {
         // Busco las relaciones antes y después de cada acción y añado las relaciones en
@@ -401,12 +429,10 @@ public class R4PlanReader implements PlanReader {
                 }
                 switch (relationship) {
                     case BEFORE, BEFORESTART, BEFOREEND:
-                        wrapper.setNext(related);
-                        related.setPrevious(wrapper);
+                        addDependency(wrapper, related);
                         break;
                     case AFTER, AFTERSTART, AFTEREND:
-                        wrapper.setPrevious(related);
-                        related.setNext(wrapper);
+                        addDependency(related, wrapper);
                         break;
                     case CONCURRENT, CONCURRENTWITHSTART, CONCURRENTWITHEND:
                         wrapper.setConcurrent(related);
@@ -417,6 +443,34 @@ public class R4PlanReader implements PlanReader {
                 }
             }
 
+        }
+        int edges = dependencies.edgeSet().size();
+        TransitiveReduction.INSTANCE.reduce(dependencies);
+        logger.debug("Grafo de dependencias: {} acciones, {} relaciones de orden ({} redundantes eliminadas)",
+                dependencies.vertexSet().size(), dependencies.edgeSet().size(), edges - dependencies.edgeSet().size());
+        for (DefaultEdge edge : dependencies.edgeSet()) {
+            ActionWrapper<PlanDefinitionActionComponent> from = dependencies.getEdgeSource(edge);
+            ActionWrapper<PlanDefinitionActionComponent> to = dependencies.getEdgeTarget(edge);
+            from.setNext(to);
+            to.setPrevious(from);
+        }
+    }
+
+    /**
+     * Añade al grafo que before va antes que after. DirectedAcyclicGraph rechaza la arista si
+     * cerraría un ciclo; una relación repetida (declarada desde las dos acciones) se ignora.
+     */
+    private void addDependency(ActionWrapper<PlanDefinitionActionComponent> before,
+            ActionWrapper<PlanDefinitionActionComponent> after) {
+        if (dependencies.containsEdge(before, after)) {
+            return;
+        }
+        try {
+            dependencies.addEdge(before, after);
+        } catch (IllegalArgumentException e) {
+            throw new InvalidPlanDefinitionException("Las relaciones entre acciones forman un ciclo: "
+                    + before.getId() + " no puede ir antes que " + after.getId()
+                    + " porque " + after.getId() + " ya va antes que " + before.getId());
         }
     }
     /**
@@ -648,15 +702,13 @@ public class R4PlanReader implements PlanReader {
     }
 
     @Override
-    public List<ActionWrapper<PlanDefinitionActionComponent>> getFirstsActions() {
-        return firsts;
-       
-        
+    public List<ActionWrapper<?>> getFirstsActions() {
+        return List.copyOf(firsts);
     }
 
     @Override
-    public List<ActionWrapper<PlanDefinitionActionComponent>>> getLastsActions() {
-        return lasts;
-    }    
+    public List<ActionWrapper<?>> getLastsActions() {
+        return List.copyOf(lasts);
+    }
 
 }

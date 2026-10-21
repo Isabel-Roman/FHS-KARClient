@@ -1,9 +1,10 @@
 package us.dit.crmiclient.model;
 
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
-public class SimpleGateway {
+public final class SimpleGateway implements ProcessNode {
     public enum GatewayType {
         AND,  
         OR
@@ -16,14 +17,31 @@ public class SimpleGateway {
     private final GatewayType type;
 
     public SimpleGateway(String id, GatewayType and) {
-        this.id = id;
+        this.id = Objects.requireNonNull(id, "El id del gateway es obligatorio");
         this.type = and;
         incomingActions = new HashSet<>();
         outgoingActions = new HashSet<>();
     }
 
+    @Override
     public String getId() {
         return this.id;
+    }
+
+    /** Dos gateways son el mismo si tienen el mismo id (ver {@link ProcessNode}) */
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof SimpleGateway other && id.equals(other.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return id.hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return "SimpleGateway[" + id + ", " + type + "]";
     }
 
     public GatewayType getType() {

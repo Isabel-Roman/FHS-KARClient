@@ -180,6 +180,70 @@ class R4PlanReaderTest {
     }
 
     @Test
+    void rejectsDirectCycle() {
+        // a antes que b, y b antes que a
+        assertThrows(InvalidPlanDefinitionException.class, () -> readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "CicloDirecto",
+                 "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before"}]},
+                            {"id": "b", "relatedAction": [{"actionId": "a", "relationship": "before"}]}]}
+                """));
+    }
+
+    @Test
+    void rejectsIndirectCycle() {
+        // a -> b -> c -> a
+        assertThrows(InvalidPlanDefinitionException.class, () -> readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "CicloIndirecto",
+                 "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before"}]},
+                            {"id": "b", "relatedAction": [{"actionId": "c", "relationship": "before"}]},
+                            {"id": "c", "relatedAction": [{"actionId": "a", "relationship": "before"}]}]}
+                """));
+    }
+
+    @Test
+    void sameRelationDeclaredFromBothActionsIsNotACycle() {
+        // a antes que b, declarado desde a (before) y desde b (after): es la misma relación
+        R4PlanReader reader = readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "DosVeces",
+                 "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before"}]},
+                            {"id": "b", "relatedAction": [{"actionId": "a", "relationship": "after"}]}]}
+                """);
+        assertEquals(Set.of("b"), ids(Set.copyOf(action(reader, "a").getNext())));
+    }
+
+    @Test
+    void redundantRelationIsRemoved() {
+        // a -> b -> c, y además a -> c: esa relación ya está implícita y no debe dar split ni join
+        R4PlanReader reader = readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "Redundante",
+                 "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before"},
+                                                          {"actionId": "c", "relationship": "before"}]},
+                            {"id": "b", "relatedAction": [{"actionId": "c", "relationship": "before"}]},
+                            {"id": "c"}]}
+                """);
+        assertNull(action(reader, "a").getOutGateway());
+        assertNull(action(reader, "c").getInGateway());
+        assertEquals(Set.of("b"), ids(Set.copyOf(action(reader, "a").getNext())));
+        assertEquals(Set.of("b"), ids(Set.copyOf(action(reader, "c").getPrevious())));
+    }
+
+    @Test
+    void mayNotRunDoesNotDependOnTheOrderInTheDocument() {
+        // El mismo caso que joinIsOrWhenAConditionIsFurtherUpTheBranch, con las acciones al revés:
+        // d -> (e, c) se declaran antes que b [condición] y a
+        R4PlanReader reader = readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "CascadaDesordenada",
+                 "action": [{"id": "d", "relatedAction": [{"actionId": "e", "relationship": "after"},
+                                                          {"actionId": "c", "relationship": "after"}]},
+                            {"id": "e", "relatedAction": [{"actionId": "b", "relationship": "after"}]},
+                            {"id": "c", "relatedAction": [{"actionId": "a", "relationship": "after"}]},
+                            {"id": "b", %s, "relatedAction": [{"actionId": "a", "relationship": "after"}]},
+                            {"id": "a"}]}
+                """.formatted(CONDITION));
+        assertEquals(SimpleGateway.GatewayType.OR, action(reader, "d").getInGateway().getType());
+    }
+
+    @Test
     void rejectsDuplicatedActionIds() {
         assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader("""
                 {"resourceType": "PlanDefinition", "name": "PlanDuplicado",

@@ -112,8 +112,7 @@ class FlowableProcessWriterTest {
         writer.setName("Proceso de prueba acción");
        
         String lastId = writer.setStartEvent(null);
-        ActionWrapper<Object> action = new ActionWrapper<>(null);
-        action.setId("a");
+        ActionWrapper<Object> action = new ActionWrapper<>(null, "a");
         action.setName("Notificar");
         action.addParameter(inputParameter("paciente", "PACIENTE-TEST"));
         action.addParameter(inputParameter("motivo", "MOTIVO-TEST"));

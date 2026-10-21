@@ -45,7 +45,7 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
         mapId();
         mapDocumentation();
         String next = mapStart();
-        for(ActionWrapper<PlanDefinitionActionComponent> action : planReader.getFirstsActions()){
+        for(ActionWrapper<?> action : planReader.getFirstsActions()){
             next = processWriter.setServiceTask(action, ENGINE_TYPE, next);
         }
         mapEnd(next);

@@ -11,7 +11,7 @@ public interface PlanReader {
     String getDocumentation(); // Nuevo método para obtener la documentación del plan
     SimpleGateway getStartGateway(); 
     SimpleGateway getEndGateway();
-    List<ActionWrapper> getFirstsActions();
-    List<ActionWrapper> getLastsActions();
+    List<ActionWrapper<?>> getFirstsActions();
+    List<ActionWrapper<?>> getLastsActions();
 
 }

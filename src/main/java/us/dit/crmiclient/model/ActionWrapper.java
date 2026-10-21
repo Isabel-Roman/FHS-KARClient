@@ -3,6 +3,7 @@ package us.dit.crmiclient.model;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 
@@ -11,9 +12,10 @@ import java.util.Set;
  * facilita la manipulación de estas acciones en una estructura de lista
  * enlazada.
  **/
-public class ActionWrapper<T> {
-    private T action;
-    private String id;
+public final class ActionWrapper<T> implements ProcessNode {
+    private final T action;
+    /** Id BPMN de la acción: inmutable, porque define la identidad del nodo (ver {@link ProcessNode}) */
+    private final String id;
     /** Acciones vinculadas directamente a continuación */
     private Set<ActionWrapper<T>> next;
     /** Acciones vinculadas directamente antes */
@@ -44,21 +46,38 @@ public class ActionWrapper<T> {
      */
     private Map<String, ParameterWrapper<?>> outParameters = new LinkedHashMap<>();
 
-    public ActionWrapper(T action) {
+    /**
+     * @param action acción en su versión de FHIR
+     * @param id     id BPMN de la acción, único en el proceso
+     */
+    public ActionWrapper(T action, String id) {
         this.action = action;
+        this.id = Objects.requireNonNull(id, "El id de la acción es obligatorio");
     }
-    
 
     public T getAction() {
         return action;
     }
 
+    @Override
     public String getId() {
         return id;
     }
 
-    public void setId(String id) {
-        this.id = id;
+    /** Dos acciones son la misma si tienen el mismo id (ver {@link ProcessNode}) */
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof ActionWrapper<?> other && id.equals(other.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return id.hashCode();
+    }
+
+    @Override
+    public String toString() {
+        return "ActionWrapper[" + id + "]";
     }
 
     public boolean isFirst() {

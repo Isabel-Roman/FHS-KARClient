@@ -6,12 +6,15 @@ import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.BpmnWriter;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.flowable.bpmn.BpmnAutoLayout;
 import org.flowable.bpmn.converter.BpmnXMLConverter;
 import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.bpmn.model.EndEvent;
 import org.flowable.bpmn.model.ExternalWorkerServiceTask;
+import org.flowable.bpmn.model.FlowElement;
 import org.flowable.bpmn.model.Gateway;
 import org.flowable.bpmn.model.IOParameter;
 import org.flowable.bpmn.model.InclusiveGateway;
@@ -30,6 +33,7 @@ public class FlowableProcessWriter implements BpmnWriter {
 
     private final BpmnModel model;
     private final Process process;
+    private Set<String> addedElements = null;
 
     public FlowableProcessWriter() {
         this.model = new BpmnModel();
@@ -37,6 +41,7 @@ public class FlowableProcessWriter implements BpmnWriter {
         this.process.setExecutable(true);
 
         this.model.addProcess(this.process);
+        addedElements = new HashSet<>();
 
         logger.debug("Creado proceso BPMN vacío");
     }
@@ -75,16 +80,18 @@ public class FlowableProcessWriter implements BpmnWriter {
         start.setId("startEvent");
         String lastId = start.getId();
        
-        process.addFlowElement(start);
+        addFlowElement(start);
+        addedElements.add(start.getId());
         logger.debug("Añadido evento de inicio {}", start.getId());
         //Si hay gatway de inicio se añade y se conecta con el eventto de inicio
         if (startGateway != null) {
             Gateway gateway = toFlowableGateway(startGateway);
-            process.addFlowElement(gateway);
+            addFlowElement(gateway);          
             logger.debug("Añadido gateway de inicio {}", gateway.getId());
-            addSequenceFlow(start.getId(), gateway.getId());
-            lastId= gateway.getId();
-        }else{logger.debug("No hay gateway de inicio, ninguna o solo una acción");}
+            addSequenceFlow(start.getId(), gateway.getId());           
+            lastId= gateway.getId();            
+        }else{
+            logger.debug("No hay gateway de inicio, ninguna o solo una acción");}
         return lastId;
     }
 
@@ -104,28 +111,32 @@ public class FlowableProcessWriter implements BpmnWriter {
     }
 
     private void addSequenceFlow(String sourceId, String targetId) {
+        logger.debug("Añadiendo flujo de secuencia desde {} hasta {}", sourceId, targetId);
         SequenceFlow flow = new SequenceFlow(sourceId, targetId);
         flow.setId("flow_" + sourceId + "_" + targetId);
-        process.addFlowElement(flow);
+        addFlowElement(flow);       
+        
     }
 
     @Override
     public void setEndEvent(SimpleGateway endGateway,String lastId) {
+        logger.debug("Añadiendo evento de fin al proceso {} tras {}", process.getId(), lastId);
         // Implementar la lógica para agregar un evento de fin al proceso BPMN
         // Por ejemplo, podrías crear un EndEvent y agregarlo al proceso
         EndEvent end = new EndEvent();
         end.setId("endEvent");
-        process.addFlowElement(end); 
+        addFlowElement(end);      
         logger.debug("Añadido evento de fin {}", end.getId());
         //Si hay gateway de salida se añade y se conecta con el evento de fin
         if (endGateway != null) {
             Gateway gateway = toFlowableGateway(endGateway);
-            process.addFlowElement(gateway);
-            logger.debug("Añadido gateway de fin {}", gateway.getId());
+            addFlowElement(gateway);        
             addSequenceFlow(lastId, gateway.getId());
+            logger.debug("Añadido gateway de fin {} y enlace creado", gateway.getId());
             lastId= gateway.getId();            
         }        
-        addSequenceFlow(lastId, end.getId());       
+        addSequenceFlow(lastId, end.getId()); 
+        logger.debug("Enlace creado desde {} hasta evento de fin {}", lastId, end.getId());     
     }
 
     /**
@@ -148,10 +159,10 @@ public class FlowableProcessWriter implements BpmnWriter {
      * los que la acción no da valor) no se pasan.
      */
     @Override
-    public String setServiceTask(ActionWrapper<?> action, String topic) {
+    public String setServiceTask(ActionWrapper<?> action, String topic, String lastId) {
         String id = action.getId();
         ExternalWorkerServiceTask task = new ExternalWorkerServiceTask();
-        task.setId(id);
+        task.setId(action.getId());
         task.setName(action.getName());
         task.setType(ServiceTask.EXTERNAL_WORKER_TASK);
         task.setTopic(topic);
@@ -167,7 +178,8 @@ public class FlowableProcessWriter implements BpmnWriter {
             dataObject.setItemSubjectRef(stringItem());
             dataObject.setValue(parameter.getValueText());
             // El conversor a XML escribe los dataObject que están entre los elementos del proceso
-            process.addFlowElement(dataObject);
+            addFlowElement(dataObject);
+           
 
             IOParameter in = new IOParameter();
             in.setSource(variable);
@@ -176,7 +188,24 @@ public class FlowableProcessWriter implements BpmnWriter {
             logger.debug("Tarea {}: parámetro {} desde la variable {} = {}", id, parameter.getName(), variable,
                     parameter.getValueText());
         }
-        process.addFlowElement(task);
+        addFlowElement(task);
+        SimpleGateway inGateway = action.getInGateway();
+        //Si hay gateway de entrada y no está ya añadido
+        Gateway gateway = null;
+        if (inGateway != null)
+        {
+            gateway= toFlowableGateway(inGateway);
+            addFlowElement(gateway);
+        }  
+      
+        //Si hay gateway tengo que conectar el elemento anterior al gateway y el gateway a la tarea, en caso contrario solo el elemento anterior a la tarea
+        if (gateway != null) {
+            addSequenceFlow(lastId, gateway.getId());
+            addSequenceFlow(gateway.getId(), task.getId());
+        } else {
+            addSequenceFlow(lastId, task.getId());
+        }      
+        
         logger.debug("Añadida tarea external-worker {} en el topic {}", id, topic);
         logger.debug("En este momento el aspecto del proceso es {}",getModel());
         return task.getId();
@@ -192,5 +221,19 @@ public class FlowableProcessWriter implements BpmnWriter {
     private void setDiagram() {
         logger.debug("Generando diagrama del proceso {}", process.getId());
         new BpmnAutoLayout(model).execute();
+    }
+    /**
+     * Se encarga de asegurarse de que los elementos no se añaden por duplicado, usa un conjunto de identificadores de elementos del proceso
+     * @param element el nuevo elemento que se quiere añadir al proceso
+     */
+    private void addFlowElement(FlowElement element) {
+        logger.debug("Intentando añadir elemento de tipo {} con id {}", element.getClass().getSimpleName(), element.getId());
+        if (addedElements.contains(element.getId())) {
+            logger.warn("Intento de añadir elemento duplicado: {}", element.getId());
+        } else {            
+            process.addFlowElement(element);
+            addedElements.add(element.getId());
+            logger.debug("Añadido elemento: {}", element.getId());
+        }      
     }
 }

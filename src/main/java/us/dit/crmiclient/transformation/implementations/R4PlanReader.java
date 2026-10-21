@@ -233,22 +233,38 @@ public class R4PlanReader implements PlanReader {
             if (!wrapper.isLast()) {
                 SimpleGateway.GatewayType outGatewayType = solveSplitType(wrapper.getNext());
                 if (outGatewayType != null) {
-                    wrapper.setOutGateway(new SimpleGateway("gw_out_" + wrapper.getId(), outGatewayType));
+                    // Split: entra desde la acción y sale hacia sus siguientes
+                    SimpleGateway split = new SimpleGateway("gw_out_" + wrapper.getId(), outGatewayType);
+                    split.addIncomingAction(wrapper);
+                    wrapper.getNext().forEach(split::addOutgoingAction);
+                    wrapper.setOutGateway(split);
                 }
             }
             // Si la acción no es la primera y tiene más de una anterior, necesita un join.
             // Si alguna de las acciones anteriores puede no ejecutarse, el join debe ser
             // OR, si no, AND
             if (!wrapper.isFirst() && wrapper.getPrevious().size() > 1) {
-                wrapper.setInGateway(
-                        new SimpleGateway("gw_in_" + wrapper.getId(), solveJoinType(wrapper.getPrevious(), mayNotRun)));
+                // Join: entra desde las anteriores de la acción y sale hacia la acción
+                SimpleGateway join = new SimpleGateway("gw_in_" + wrapper.getId(),
+                        solveJoinType(wrapper.getPrevious(), mayNotRun));
+                wrapper.getPrevious().forEach(join::addIncomingAction);
+                join.addOutgoingAction(wrapper);
+                wrapper.setInGateway(join);
             }
         }
         // Analizo el split de entrada mirando las primeras acciones. Las primeras acciones son las de salida del evento de inicio...
+        // No tiene acciones de entrada: le llega el evento de inicio
         SimpleGateway.GatewayType startSplit = solveSplitType(firsts);
         startGateway = startSplit == null ? null : new SimpleGateway("gw_start", startSplit);
+        if (startGateway != null) {
+            firsts.forEach(startGateway::addOutgoingAction);
+        }
         // Analizo el join de salida mirando las últimas acciones. Las últimas acciones son las de entrada para el evento de fin...
+        // No tiene acciones de salida: va al evento de fin
         endGateway = lasts.size() > 1 ? new SimpleGateway("gw_end", solveJoinType(lasts, mayNotRun)) : null;
+        if (endGateway != null) {
+            lasts.forEach(endGateway::addIncomingAction);
+        }
         logger.debug("Gateways del plan: inicio={}, fin={}",
                 startGateway == null ? "-" : startGateway.getType(), endGateway == null ? "-" : endGateway.getType());
     }

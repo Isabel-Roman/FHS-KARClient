@@ -36,7 +36,8 @@ public interface BpmnWriter {
      *
      * @param action acción a añadir
      * @param topic  tema al que se suscriben los trabajadores que ejecutan la tarea
+     * @param lastId id del último elemento añadido al modelo, para conectar los elementos que se creen
      */
-    String setServiceTask(ActionWrapper<?> action, String topic);
+    String setServiceTask(ActionWrapper<?> action, String topic, String lastId);
 
 }

@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.hl7.fhir.r4.model.CanonicalType;
 import org.hl7.fhir.r4.model.Expression;
@@ -106,6 +108,16 @@ class R4PlanReaderTest {
         assertEquals("gw_out_a", split.getId());
         assertEquals(SimpleGateway.GatewayType.AND, join.getType());
         assertEquals("gw_in_d", join.getId());
+        // El split entra desde a y sale hacia b y c; el join entra desde b y c y sale hacia d
+        assertEquals(Set.of("a"), ids(split.getIncomingActions()));
+        assertEquals(Set.of("b", "c"), ids(split.getOutgoingActions()));
+        assertEquals(Set.of("b", "c"), ids(join.getIncomingActions()));
+        assertEquals(Set.of("d"), ids(join.getOutgoingActions()));
+    }
+
+    /** Ids de un conjunto de acciones, para comparar sin depender del orden */
+    private static Set<String> ids(Set<ActionWrapper<?>> actions) {
+        return actions.stream().map(ActionWrapper::getId).collect(Collectors.toSet());
     }
 
     @Test
@@ -159,6 +171,12 @@ class R4PlanReaderTest {
         assertEquals("gw_start", reader.getStartGateway().getId());
         assertEquals(SimpleGateway.GatewayType.OR, reader.getEndGateway().getType());
         assertEquals("gw_end", reader.getEndGateway().getId());
+        // Al de inicio le llega el evento de inicio y sale hacia las primeras acciones;
+        // al de fin le llegan las últimas y sale hacia el evento de fin
+        assertTrue(reader.getStartGateway().getIncomingActions().isEmpty());
+        assertEquals(Set.of("x", "y"), ids(reader.getStartGateway().getOutgoingActions()));
+        assertEquals(Set.of("x", "y"), ids(reader.getEndGateway().getIncomingActions()));
+        assertTrue(reader.getEndGateway().getOutgoingActions().isEmpty());
     }
 
     @Test

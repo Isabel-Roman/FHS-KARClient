@@ -186,6 +186,8 @@ public class R4PlanReader implements PlanReader {
                 logger.warn("El id BPMN {} de la acción {} ya existe, se usa {}", bpmnId, fhirId, uniqueId);
             }
             wrapper.setId(uniqueId);
+            // Nombre visible de la acción: su title, o su id si no tiene
+            wrapper.setName(action.hasTitle() ? action.getTitle() : uniqueId);
             actions.add(wrapper);
         }
     }
@@ -464,7 +466,7 @@ public class R4PlanReader implements PlanReader {
                 throw new InvalidPlanDefinitionException("La acción " + wrapper.getId()
                         + " asigna más de un valor al parámetro " + name);
             }
-            parameter.setValue(dynamicValue.getExpression());
+            parameter.setValue(dynamicValue.getExpression(), dynamicValue.getExpression().getExpression());
             logger.debug("La acción {} asigna al parámetro {} el valor {}", wrapper.getId(), name,
                     dynamicValue.getExpression().getExpression());
         }

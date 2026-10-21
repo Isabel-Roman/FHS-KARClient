@@ -29,6 +29,8 @@ public class ActionWrapper<T> {
      * de ella, el transformer de cada motor localiza dónde y cómo arrancarlo.
      */
     private String subprocessCanonical;
+    /** Nombre visible de la acción (su title), para mostrarlo en el proceso generado */
+    private String name;
     /**
      * Parámetros de entrada del subproceso que implementa la acción, por nombre, en el orden en
      * que los declara su Library.
@@ -116,6 +118,14 @@ public class ActionWrapper<T> {
 
     public void setOutGateway(SimpleGateway outGateway) {
         this.outGateway = outGateway;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
     }
 
     public String getSubprocessCanonical() {

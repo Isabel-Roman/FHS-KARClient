@@ -339,6 +339,10 @@ class R4PlanReaderTest {
         Expression paciente = (Expression) a.getInParameters().get("paciente").getValue();
         assertEquals("text/fhirpath", paciente.getLanguage());
         assertEquals("%subject", paciente.getExpression());
+        // El texto del valor, para quien no conoce la versión de FHIR
+        assertEquals("%subject", a.getInParameters().get("paciente").getValueText());
+        // La acción no tiene title: su nombre es su id
+        assertEquals("a", a.getName());
         assertEquals("'revisión'", ((Expression) a.getInParameters().get("motivo").getValue()).getExpression());
         assertNull(a.getOutParameters().get("enviada").getValue());
     }

@@ -43,8 +43,8 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
         mapName();
         mapId();
         mapDocumentation();
-        mapStart();
-        mapEnd();
+        String next = mapStart();
+        mapEnd(next);
         logger.info("Transformación completada para el plan {}", planReader.getId());
         return processWriter.getModel();
     }
@@ -62,19 +62,19 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
         String planId = planReader.getId();
         processWriter.setId(planId);
     }
-    private void mapStart(){
+    private String mapStart(){
         logger.debug("Mapeando inicio del plan al proceso BPMN");
         // Implementar la lógica para mapear el inicio del plan al proceso BPMN
         SimpleGateway startGateway = planReader.getStartGateway();
-        logger.debug("Inicio del plan mapeado al gateway {}", startGateway==null?"sin startgateway":startGateway.getId());
-        processWriter.setStartEvent(startGateway);
+        logger.debug("Inicio del plan mapeado al gateway {}", startGateway==null?"sin startgateway":startGateway.getId());           
+        return processWriter.setStartEvent(startGateway);
     }
-    private void mapEnd(){
+    private void mapEnd(String lastId){
         logger.debug("Mapeando final del plan al proceso BPMN");
         // Implementar la lógica para mapear el final del plan al proceso BPMN
         SimpleGateway endGateway = planReader.getEndGateway();
         logger.debug("Final del plan mapeado al gateway {}", endGateway==null?"sin endgateway":endGateway.getId());
-        processWriter.setEndEvent(endGateway);
+        processWriter.setEndEvent(endGateway,lastId);
     }
 
    

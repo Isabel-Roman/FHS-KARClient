@@ -37,6 +37,12 @@ public class ParameterWrapper<T> {
     private final IBaseDatatype defaultValue;
     /** Valor asignado en la invocación; null mientras no se asigne */
     private IBaseDatatype value;
+    /**
+     * El valor como texto, para quien lo usa sin conocer la versión de FHIR (p.ej. el writer):
+     * si el valor es una expresión, su texto (FHIRPath, CQL...) sin evaluar. Null mientras no se
+     * asigne valor.
+     */
+    private String valueText;
 
     public ParameterWrapper(T definition, String name, Use use, int min, String max, String type, String profile,
             String documentation, IBaseDatatype defaultValue) {
@@ -91,7 +97,16 @@ public class ParameterWrapper<T> {
         return value;
     }
 
-    public void setValue(IBaseDatatype value) {
+    public String getValueText() {
+        return valueText;
+    }
+
+    /**
+     * Asigna el valor y su texto a la vez, para que no puedan quedar desalineados. Quien conoce la
+     * versión de FHIR (el reader) es quien sabe sacar el texto del valor.
+     */
+    public void setValue(IBaseDatatype value, String valueText) {
         this.value = value;
+        this.valueText = valueText;
     }
 }

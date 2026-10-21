@@ -8,24 +8,17 @@ import java.util.Set;
 
 
 /**
- * Envuelve acciones de cualquier versión fhir y añade metadatos para su gestión
- * facilita la manipulación de estas acciones en una estructura de lista
- * enlazada.
+ * Envuelve acciones de cualquier versión fhir y añade los metadatos que se usan al generar el
+ * proceso (nombre, subproceso, parámetros), sin depender de la versión.
+ * Las conexiones con el resto del proceso (anteriores, siguientes, gateways) no están aquí: las
+ * guarda el grafo del proceso del reader (ver PlanReader).
  **/
 public final class ActionWrapper<T> implements ProcessNode {
     private final T action;
     /** Id BPMN de la acción: inmutable, porque define la identidad del nodo (ver {@link ProcessNode}) */
     private final String id;
-    /** Acciones vinculadas directamente a continuación */
-    private Set<ActionWrapper<T>> next;
-    /** Acciones vinculadas directamente antes */
-    private Set<ActionWrapper<T>> previous;
-    /** Acciones que se ejecutan concurrentemente */
+    /** Acciones que se ejecutan concurrentemente (no son relaciones de orden, no están en el grafo) */
     private Set<ActionWrapper<T>> concurrent;
-    /** Puerta de entrada */
-    private SimpleGateway inGateway;
-    /** Puerta de salida */
-    private SimpleGateway outGateway;
     /**
      * Canónica (url|version) del PlanDefinition del subproceso que implementa la acción. A partir
      * de ella, el transformer de cada motor localiza dónde y cómo arrancarlo.
@@ -80,37 +73,6 @@ public final class ActionWrapper<T> implements ProcessNode {
         return "ActionWrapper[" + id + "]";
     }
 
-    public boolean isFirst() {
-
-        return previous == null;
-    }
-
-    public boolean isLast() {
-        return next == null;
-    }
-
-    public Set<ActionWrapper<T>> getNext() {
-        return next;
-    }
-
-    public void setNext(ActionWrapper<T> next) {
-        if (this.next == null) {
-            this.next = new java.util.HashSet<>();
-        }
-        this.next.add(next);
-    }
-
-    public Set<ActionWrapper<T>> getPrevious() {
-        return previous;
-    }
-
-    public void setPrevious(ActionWrapper<T> previous) {
-        if (this.previous == null) {
-            this.previous = new java.util.HashSet<>();
-        }
-        this.previous.add(previous);
-    }
-
     public Set<ActionWrapper<T>> getConcurrent() {
         return concurrent;
     }
@@ -122,22 +84,6 @@ public final class ActionWrapper<T> implements ProcessNode {
         this.concurrent.add(concurrent);
     }
 
-
-    public SimpleGateway getInGateway() {
-        return inGateway;
-    }
-
-    public void setInGateway(SimpleGateway inGateway) {
-        this.inGateway = inGateway;
-    }
-
-    public SimpleGateway getOutGateway() {
-        return outGateway;
-    }
-
-    public void setOutGateway(SimpleGateway outGateway) {
-        this.outGateway = outGateway;
-    }
 
     public String getName() {
         return name;

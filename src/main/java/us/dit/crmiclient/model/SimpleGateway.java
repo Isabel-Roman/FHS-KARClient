@@ -1,31 +1,33 @@
 package us.dit.crmiclient.model;
 
-import java.util.HashSet;
 import java.util.Objects;
-import java.util.Set;
 
+/**
+ * Gateway del proceso, independiente del motor. Solo guarda su id y su tipo: las acciones y
+ * nodos que entran y salen de él están en el grafo del proceso del reader (ver PlanReader).
+ */
 public final class SimpleGateway implements ProcessNode {
     public enum GatewayType {
-        AND,  
+        AND,
         OR
     };
-    Set<ActionWrapper<?>> incomingActions;
-    Set<ActionWrapper<?>> outgoingActions;
 
     /** Id BPMN del gateway, necesario para enlazarlo con sequence flows */
     private final String id;
     private final GatewayType type;
 
-    public SimpleGateway(String id, GatewayType and) {
+    public SimpleGateway(String id, GatewayType type) {
         this.id = Objects.requireNonNull(id, "El id del gateway es obligatorio");
-        this.type = and;
-        incomingActions = new HashSet<>();
-        outgoingActions = new HashSet<>();
+        this.type = type;
     }
 
     @Override
     public String getId() {
         return this.id;
+    }
+
+    public GatewayType getType() {
+        return this.type;
     }
 
     /** Dos gateways son el mismo si tienen el mismo id (ver {@link ProcessNode}) */
@@ -43,22 +45,4 @@ public final class SimpleGateway implements ProcessNode {
     public String toString() {
         return "SimpleGateway[" + id + ", " + type + "]";
     }
-
-    public GatewayType getType() {
-        return this.type;
-    }
-    public void addIncomingAction(ActionWrapper<?> action) {
-        incomingActions.add(action);
-    }
-
-    public void addOutgoingAction(ActionWrapper<?> action) {
-        outgoingActions.add(action);
-    }
-    public Set<ActionWrapper<?>> getIncomingActions() {
-        return incomingActions;
-    }
-    public Set<ActionWrapper<?>> getOutgoingActions() {
-        return outgoingActions;
-    }
-
 }

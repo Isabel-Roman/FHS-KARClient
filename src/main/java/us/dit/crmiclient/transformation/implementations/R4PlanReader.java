@@ -1,7 +1,10 @@
 package us.dit.crmiclient.transformation.implementations;
 
 import us.dit.crmiclient.model.ActionWrapper;
+import us.dit.crmiclient.model.Flow;
 import us.dit.crmiclient.model.ParameterWrapper;
+import us.dit.crmiclient.model.ProcessEvent;
+import us.dit.crmiclient.model.ProcessNode;
 import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 import us.dit.crmiclient.transformation.PlanReader;
@@ -126,8 +129,21 @@ public class R4PlanReader implements PlanReader {
      * acíclico (DirectedAcyclicGraph rechaza las aristas que cerrarían un ciclo) y se recorre
      * en orden topológico. Es un detalle interno del reader: no se expone fuera.
      */
-    private final DirectedAcyclicGraph<ActionWrapper<PlanDefinitionActionComponent>, DefaultEdge> dependencies =
+    private final DirectedAcyclicGraph<ActionWrapper<PlanDefinitionActionComponent>, DefaultEdge> dependencyGraph =
             new DirectedAcyclicGraph<>(DefaultEdge.class);
+    /**
+     * Grafo del proceso BPMN: los nodos son los eventos de inicio y fin, las acciones y los
+     * gateways, y las aristas los sequence flows. Se construye a partir de dependencyGraph y de
+     * los gateways. Las aristas se añaden siempre con su objeto Flow, así que no hace falta
+     * proveedor de aristas. Es interno: fuera se recorre con getNodes, getFlows...
+     */
+    private final DirectedAcyclicGraph<ProcessNode, Flow> processGraph = new DirectedAcyclicGraph<>(null, null, false);
+    /** Nodos del proceso por su id BPMN, para buscarlos directamente y detectar ids repetidos */
+    private final Map<String, ProcessNode> nodesById = new HashMap<>();
+    /** Split (gateway de salida) de las acciones que lo necesitan; solo para construir processGraph */
+    private final Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> splits = new HashMap<>();
+    /** Join (gateway de entrada) de las acciones que lo necesitan; solo para construir processGraph */
+    private final Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> joins = new HashMap<>();
 
     /**
      * Reader sin acceso a servidor: no resuelve ningún recurso, así que solo sirve para
@@ -149,6 +165,7 @@ public class R4PlanReader implements PlanReader {
         createActions();
         shortActions();
         solveGateways();
+        buildProcessGraph();
         solveSubprocessesCalls();
         logger.debug("PlanDefinition leído: id={}, name={}", plan.getId(), plan.getName());
     }
@@ -206,7 +223,7 @@ public class R4PlanReader implements PlanReader {
             // Nombre visible de la acción: su title, o su id si no tiene
             wrapper.setName(action.hasTitle() ? action.getTitle() : uniqueId);
             actions.add(wrapper);
-            dependencies.addVertex(wrapper);
+            dependencyGraph.addVertex(wrapper);
         }
     }
 
@@ -255,10 +272,7 @@ public class R4PlanReader implements PlanReader {
                 SimpleGateway.GatewayType outGatewayType = solveSplitType(next);
                 if (outGatewayType != null) {
                     // Split: entra desde la acción y sale hacia sus siguientes
-                    SimpleGateway split = new SimpleGateway("gw_out_" + wrapper.getId(), outGatewayType);
-                    split.addIncomingAction(wrapper);
-                    next.forEach(split::addOutgoingAction);
-                    wrapper.setOutGateway(split);
+                    splits.put(wrapper, new SimpleGateway("gw_out_" + wrapper.getId(), outGatewayType));
                 }
             }
             // Si la acción no es la primera y tiene más de una anterior, necesita un join.
@@ -266,27 +280,104 @@ public class R4PlanReader implements PlanReader {
             // OR, si no, AND
             if (previous.size() > 1) {
                 // Join: entra desde las anteriores de la acción y sale hacia la acción
-                SimpleGateway join = new SimpleGateway("gw_in_" + wrapper.getId(), solveJoinType(previous, mayNotRun));
-                previous.forEach(join::addIncomingAction);
-                join.addOutgoingAction(wrapper);
-                wrapper.setInGateway(join);
+                joins.put(wrapper, new SimpleGateway("gw_in_" + wrapper.getId(), solveJoinType(previous, mayNotRun)));
             }
         }
         // Analizo el split de entrada mirando las primeras acciones. Las primeras acciones son las de salida del evento de inicio...
-        // No tiene acciones de entrada: le llega el evento de inicio
         SimpleGateway.GatewayType startSplit = solveSplitType(firsts);
         startGateway = startSplit == null ? null : new SimpleGateway("gw_start", startSplit);
-        if (startGateway != null) {
-            firsts.forEach(startGateway::addOutgoingAction);
-        }
         // Analizo el join de salida mirando las últimas acciones. Las últimas acciones son las de entrada para el evento de fin...
-        // No tiene acciones de salida: va al evento de fin
         endGateway = lasts.size() > 1 ? new SimpleGateway("gw_end", solveJoinType(lasts, mayNotRun)) : null;
-        if (endGateway != null) {
-            lasts.forEach(endGateway::addIncomingAction);
-        }
         logger.debug("Gateways del plan: inicio={}, fin={}",
                 startGateway == null ? "-" : startGateway.getType(), endGateway == null ? "-" : endGateway.getType());
+    }
+
+    /**
+     * Construye el grafo del proceso a partir del de dependencias y de los gateways:
+     * <ul>
+     * <li>Inicio → gateway de inicio (si hay) → primeras acciones.</li>
+     * <li>Cada relación A→B del grafo de dependencias es un flujo desde la salida de A (su
+     * split, si tiene) hasta la entrada de B (su join, si tiene). Si A tiene split, A → split;
+     * si B tiene join, join → B.</li>
+     * <li>Últimas acciones → gateway de fin (si hay) → fin.</li>
+     * <li>Un plan sin acciones va directamente del inicio al fin.</li>
+     * </ul>
+     * Todos los nodos deben tener id distinto, porque es el id del elemento BPMN: si una acción
+     * tiene el id de un gateway o de un evento (p.ej. una acción "gw_out_a" o "startEvent"), el
+     * plan se rechaza.
+     */
+    private void buildProcessGraph() {
+        addNode(ProcessEvent.START);
+        actions.forEach(this::addNode);
+        joins.values().forEach(this::addNode);
+        splits.values().forEach(this::addNode);
+        if (startGateway != null) {
+            addNode(startGateway);
+        }
+        if (endGateway != null) {
+            addNode(endGateway);
+        }
+        addNode(ProcessEvent.END);
+
+        // Inicio
+        if (startGateway != null) {
+            addFlow(ProcessEvent.START, startGateway);
+            firsts.forEach(first -> addFlow(startGateway, entry(first)));
+        } else if (!firsts.isEmpty()) {
+            // Sin gateway de inicio hay una única primera acción
+            addFlow(ProcessEvent.START, entry(firsts.get(0)));
+        }
+        // Acciones y gateways de cada acción
+        for (ActionWrapper<PlanDefinitionActionComponent> action : actions) {
+            if (joins.containsKey(action)) {
+                addFlow(joins.get(action), action);
+            }
+            if (splits.containsKey(action)) {
+                addFlow(action, splits.get(action));
+            }
+            for (ActionWrapper<PlanDefinitionActionComponent> next : successors(action)) {
+                addFlow(exit(action), entry(next));
+            }
+        }
+        // Fin
+        if (endGateway != null) {
+            lasts.forEach(last -> addFlow(exit(last), endGateway));
+            addFlow(endGateway, ProcessEvent.END);
+        } else if (!lasts.isEmpty()) {
+            // Sin gateway de fin hay una única última acción
+            addFlow(exit(lasts.get(0)), ProcessEvent.END);
+        }
+        if (actions.isEmpty()) {
+            addFlow(ProcessEvent.START, ProcessEvent.END);
+        }
+        logger.debug("Grafo del proceso: {} nodos, flujos {}", processGraph.vertexSet().size(), getFlows());
+    }
+
+    /** Añade un nodo al grafo del proceso, rechazando el plan si su id ya lo usa otro nodo */
+    private void addNode(ProcessNode node) {
+        ProcessNode previous = nodesById.putIfAbsent(node.getId(), node);
+        if (previous != null && !previous.equals(node)) {
+            throw new InvalidPlanDefinitionException("El id " + node.getId() + " lo usan a la vez " + previous
+                    + " y " + node + ": los elementos del proceso deben tener ids distintos");
+        }
+        processGraph.addVertex(node);
+    }
+
+    /** Añade un flujo al grafo del proceso; si ya existe no hace nada */
+    private void addFlow(ProcessNode source, ProcessNode target) {
+        if (!processGraph.containsEdge(source, target)) {
+            processGraph.addEdge(source, target, new Flow(source, target));
+        }
+    }
+
+    /** Nodo por el que se entra a una acción: su join si tiene, o la propia acción */
+    private ProcessNode entry(ActionWrapper<PlanDefinitionActionComponent> action) {
+        return joins.containsKey(action) ? joins.get(action) : action;
+    }
+
+    /** Nodo por el que se sale de una acción: su split si tiene, o la propia acción */
+    private ProcessNode exit(ActionWrapper<PlanDefinitionActionComponent> action) {
+        return splits.containsKey(action) ? splits.get(action) : action;
     }
 
     /**
@@ -356,7 +447,7 @@ public class R4PlanReader implements PlanReader {
     private Set<ActionWrapper<PlanDefinitionActionComponent>> findActionsThatMayNotRun() {
         Set<ActionWrapper<PlanDefinitionActionComponent>> mayNotRun = new HashSet<>();
         // El iterador de DirectedAcyclicGraph recorre los vértices en orden topológico
-        for (ActionWrapper<PlanDefinitionActionComponent> wrapper : dependencies) {
+        for (ActionWrapper<PlanDefinitionActionComponent> wrapper : dependencyGraph) {
             Set<ActionWrapper<PlanDefinitionActionComponent>> previous = predecessors(wrapper);
             if (hasApplicabilityCondition(wrapper.getAction())
                     || (!previous.isEmpty() && mayNotRun.containsAll(previous))) {
@@ -369,13 +460,13 @@ public class R4PlanReader implements PlanReader {
     /** Acciones que van inmediatamente después de la dada, según el grafo de dependencias */
     private Set<ActionWrapper<PlanDefinitionActionComponent>> successors(
             ActionWrapper<PlanDefinitionActionComponent> wrapper) {
-        return new LinkedHashSet<>(Graphs.successorListOf(dependencies, wrapper));
+        return new LinkedHashSet<>(Graphs.successorListOf(dependencyGraph, wrapper));
     }
 
     /** Acciones que van inmediatamente antes de la dada, según el grafo de dependencias */
     private Set<ActionWrapper<PlanDefinitionActionComponent>> predecessors(
             ActionWrapper<PlanDefinitionActionComponent> wrapper) {
-        return new LinkedHashSet<>(Graphs.predecessorListOf(dependencies, wrapper));
+        return new LinkedHashSet<>(Graphs.predecessorListOf(dependencyGraph, wrapper));
     }
 
     private static boolean hasApplicabilityCondition(PlanDefinitionActionComponent action) {
@@ -444,16 +535,10 @@ public class R4PlanReader implements PlanReader {
             }
 
         }
-        int edges = dependencies.edgeSet().size();
-        TransitiveReduction.INSTANCE.reduce(dependencies);
+        int edges = dependencyGraph.edgeSet().size();
+        TransitiveReduction.INSTANCE.reduce(dependencyGraph);
         logger.debug("Grafo de dependencias: {} acciones, {} relaciones de orden ({} redundantes eliminadas)",
-                dependencies.vertexSet().size(), dependencies.edgeSet().size(), edges - dependencies.edgeSet().size());
-        for (DefaultEdge edge : dependencies.edgeSet()) {
-            ActionWrapper<PlanDefinitionActionComponent> from = dependencies.getEdgeSource(edge);
-            ActionWrapper<PlanDefinitionActionComponent> to = dependencies.getEdgeTarget(edge);
-            from.setNext(to);
-            to.setPrevious(from);
-        }
+                dependencyGraph.vertexSet().size(), dependencyGraph.edgeSet().size(), edges - dependencyGraph.edgeSet().size());
     }
 
     /**
@@ -462,11 +547,11 @@ public class R4PlanReader implements PlanReader {
      */
     private void addDependency(ActionWrapper<PlanDefinitionActionComponent> before,
             ActionWrapper<PlanDefinitionActionComponent> after) {
-        if (dependencies.containsEdge(before, after)) {
+        if (dependencyGraph.containsEdge(before, after)) {
             return;
         }
         try {
-            dependencies.addEdge(before, after);
+            dependencyGraph.addEdge(before, after);
         } catch (IllegalArgumentException e) {
             throw new InvalidPlanDefinitionException("Las relaciones entre acciones forman un ciclo: "
                     + before.getId() + " no puede ir antes que " + after.getId()
@@ -619,19 +704,49 @@ public class R4PlanReader implements PlanReader {
        
     
 
-    /** Acciones del plan, en el orden del documento */
-    public Set<ActionWrapper<PlanDefinitionActionComponent>> getActions() {
-        return Collections.unmodifiableSet(actions);
+    /** Nodos del proceso en orden topológico: cada nodo aparece después de todos sus anteriores */
+    @Override
+    public List<ProcessNode> getNodes() {
+        List<ProcessNode> nodes = new ArrayList<>();
+        processGraph.forEach(nodes::add);
+        return nodes;
     }
 
-    @Override 
-    public SimpleGateway getStartGateway() {
-        return startGateway;
+    /** Flujos del proceso, agrupados por su origen en orden topológico */
+    @Override
+    public List<Flow> getFlows() {
+        List<Flow> flows = new ArrayList<>();
+        for (ProcessNode node : processGraph) {
+            flows.addAll(processGraph.outgoingEdgesOf(node));
+        }
+        return flows;
     }
 
     @Override
-    public SimpleGateway getEndGateway() {
-        return endGateway;
+    public List<ProcessNode> getSuccessors(ProcessNode node) {
+        return List.copyOf(Graphs.successorListOf(processGraph, requireNode(node)));
+    }
+
+    @Override
+    public List<ProcessNode> getPredecessors(ProcessNode node) {
+        return List.copyOf(Graphs.predecessorListOf(processGraph, requireNode(node)));
+    }
+
+    @Override
+    public ProcessNode getNode(String id) {
+        return nodesById.get(id);
+    }
+
+    private ProcessNode requireNode(ProcessNode node) {
+        if (!processGraph.containsVertex(node)) {
+            throw new IllegalArgumentException("El nodo " + node + " no es del proceso");
+        }
+        return node;
+    }
+
+    /** Acciones del plan, en el orden del documento */
+    public Set<ActionWrapper<PlanDefinitionActionComponent>> getActions() {
+        return Collections.unmodifiableSet(actions);
     }
 
     @Override
@@ -699,16 +814,6 @@ public class R4PlanReader implements PlanReader {
     private static String toBpmnId(String name) {
         String id = name.trim().replaceAll("[^A-Za-z0-9_.-]", "_");
         return id.matches("^[A-Za-z_].*") ? id : "_" + id;
-    }
-
-    @Override
-    public List<ActionWrapper<?>> getFirstsActions() {
-        return List.copyOf(firsts);
-    }
-
-    @Override
-    public List<ActionWrapper<?>> getLastsActions() {
-        return List.copyOf(lasts);
     }
 
 }

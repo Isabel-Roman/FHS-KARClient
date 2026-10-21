@@ -1,10 +1,8 @@
 package us.dit.crmiclient.transformation.implementations;
-import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.BpmnWriter;
 import us.dit.crmiclient.transformation.PlanReader;
 import us.dit.crmiclient.transformation.PlanTransformer;
 import us.dit.crmiclient.services.ResourceResolver;
-import us.dit.crmiclient.model.ActionWrapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,13 +42,19 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
         mapName();
         mapId();
         mapDocumentation();
-        String next = mapStart();
-        for(ActionWrapper<?> action : planReader.getFirstsActions()){
-            next = processWriter.setServiceTask(action, ENGINE_TYPE, next);
-        }
-        mapEnd(next);
+        mapProcess();
         logger.info("Transformación completada para el plan {}", planReader.getId());
         return processWriter.getModel();
+    }
+
+    /**
+     * Pasa al writer el grafo del proceso: primero todos los nodos (eventos, acciones y gateways)
+     * y después los flujos que los unen.
+     */
+    private void mapProcess() {
+        planReader.getNodes().forEach(processWriter::addNode);
+        planReader.getFlows().forEach(processWriter::addFlow);
+        logger.debug("Proceso mapeado: {} nodos y {} flujos", planReader.getNodes().size(), planReader.getFlows().size());
     }
     private void mapDocumentation(){
         // Implementar la lógica para mapear la documentación del plan al proceso BPMN
@@ -66,20 +70,4 @@ public class R4Plan2FlowablePlanTransformer implements PlanTransformer {
         String planId = planReader.getId();
         processWriter.setId(planId);
     }
-    private String mapStart(){
-        logger.debug("Mapeando inicio del plan al proceso BPMN");
-        // Implementar la lógica para mapear el inicio del plan al proceso BPMN
-        SimpleGateway startGateway = planReader.getStartGateway();
-        logger.debug("Inicio del plan mapeado al gateway {}", startGateway==null?"sin startgateway":startGateway.getId());           
-        return processWriter.setStartEvent(startGateway);
-    }
-    private void mapEnd(String lastId){
-        logger.debug("Mapeando final del plan al proceso BPMN");
-        // Implementar la lógica para mapear el final del plan al proceso BPMN
-        SimpleGateway endGateway = planReader.getEndGateway();
-        logger.debug("Final del plan mapeado al gateway {}", endGateway==null?"sin endgateway":endGateway.getId());
-        processWriter.setEndEvent(endGateway,lastId);
-    }
-
-   
 }

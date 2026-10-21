@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -21,7 +22,10 @@ import ca.uhn.fhir.context.FhirContext;
 import ca.uhn.fhir.parser.IParser;
 
 import us.dit.crmiclient.model.ActionWrapper;
+import us.dit.crmiclient.model.Flow;
 import us.dit.crmiclient.model.ParameterWrapper;
+import us.dit.crmiclient.model.ProcessEvent;
+import us.dit.crmiclient.model.ProcessNode;
 import us.dit.crmiclient.model.SimpleGateway;
 import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
 
@@ -85,10 +89,10 @@ class R4PlanReaderTest {
                  "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before-start"}]},
                             {"id": "b"}]}
                 """);
-        assertNull(action(reader, "a").getOutGateway());
-        assertNull(action(reader, "b").getInGateway());
-        assertNull(reader.getStartGateway());
-        assertNull(reader.getEndGateway());
+        assertNull(gateway(reader, "gw_out_a"));
+        assertNull(gateway(reader, "gw_in_b"));
+        assertNull(gateway(reader, "gw_start"));
+        assertNull(gateway(reader, "gw_end"));
     }
 
     @Test
@@ -102,22 +106,27 @@ class R4PlanReaderTest {
                             {"id": "d", "relatedAction": [{"actionId": "b", "relationship": "after"},
                                                           {"actionId": "c", "relationship": "after"}]}]}
                 """);
-        SimpleGateway split = action(reader, "a").getOutGateway();
-        SimpleGateway join = action(reader, "d").getInGateway();
+        SimpleGateway split = gateway(reader, "gw_out_a");
+        SimpleGateway join = gateway(reader, "gw_in_d");
         assertEquals(SimpleGateway.GatewayType.AND, split.getType());
         assertEquals("gw_out_a", split.getId());
         assertEquals(SimpleGateway.GatewayType.AND, join.getType());
         assertEquals("gw_in_d", join.getId());
         // El split entra desde a y sale hacia b y c; el join entra desde b y c y sale hacia d
-        assertEquals(Set.of("a"), ids(split.getIncomingActions()));
-        assertEquals(Set.of("b", "c"), ids(split.getOutgoingActions()));
-        assertEquals(Set.of("b", "c"), ids(join.getIncomingActions()));
-        assertEquals(Set.of("d"), ids(join.getOutgoingActions()));
+        assertEquals(Set.of("a"), ids(reader.getPredecessors(split)));
+        assertEquals(Set.of("b", "c"), ids(reader.getSuccessors(split)));
+        assertEquals(Set.of("b", "c"), ids(reader.getPredecessors(join)));
+        assertEquals(Set.of("d"), ids(reader.getSuccessors(join)));
     }
 
-    /** Ids de un conjunto de acciones, para comparar sin depender del orden */
-    private static Set<String> ids(Set<ActionWrapper<?>> actions) {
-        return actions.stream().map(ActionWrapper::getId).collect(Collectors.toSet());
+    /** Ids de unos nodos, para comparar sin depender del orden */
+    private static Set<String> ids(Collection<? extends ProcessNode> nodes) {
+        return nodes.stream().map(ProcessNode::getId).collect(Collectors.toSet());
+    }
+
+    /** Gateway del proceso con el id dado, o null si no existe */
+    private static SimpleGateway gateway(R4PlanReader reader, String id) {
+        return (SimpleGateway) reader.getNode(id);
     }
 
     @Test
@@ -131,8 +140,8 @@ class R4PlanReaderTest {
                             {"id": "d", "relatedAction": [{"actionId": "b", "relationship": "after"},
                                                           {"actionId": "c", "relationship": "after"}]}]}
                 """.formatted(CONDITION));
-        assertEquals(SimpleGateway.GatewayType.OR, action(reader, "a").getOutGateway().getType());
-        assertEquals(SimpleGateway.GatewayType.OR, action(reader, "d").getInGateway().getType());
+        assertEquals(SimpleGateway.GatewayType.OR, gateway(reader, "gw_out_a").getType());
+        assertEquals(SimpleGateway.GatewayType.OR, gateway(reader, "gw_in_d").getType());
     }
 
     @Test
@@ -147,8 +156,8 @@ class R4PlanReaderTest {
                             {"id": "d", "relatedAction": [{"actionId": "e", "relationship": "after"},
                                                           {"actionId": "c", "relationship": "after"}]}]}
                 """.formatted(CONDITION));
-        assertNull(action(reader, "b").getOutGateway());
-        assertEquals(SimpleGateway.GatewayType.OR, action(reader, "d").getInGateway().getType());
+        assertNull(gateway(reader, "gw_out_b"));
+        assertEquals(SimpleGateway.GatewayType.OR, gateway(reader, "gw_in_d").getType());
     }
 
     @Test
@@ -158,7 +167,7 @@ class R4PlanReaderTest {
                  "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before"}]},
                             {"id": "b", %s}]}
                 """.formatted(CONDITION));
-        assertEquals(SimpleGateway.GatewayType.OR, action(reader, "a").getOutGateway().getType());
+        assertEquals(SimpleGateway.GatewayType.OR, gateway(reader, "gw_out_a").getType());
     }
 
     @Test
@@ -167,16 +176,121 @@ class R4PlanReaderTest {
                 {"resourceType": "PlanDefinition", "name": "Independientes",
                  "action": [{"id": "x"}, {"id": "y", %s}]}
                 """.formatted(CONDITION));
-        assertEquals(SimpleGateway.GatewayType.OR, reader.getStartGateway().getType());
-        assertEquals("gw_start", reader.getStartGateway().getId());
-        assertEquals(SimpleGateway.GatewayType.OR, reader.getEndGateway().getType());
-        assertEquals("gw_end", reader.getEndGateway().getId());
+        assertEquals(SimpleGateway.GatewayType.OR, gateway(reader, "gw_start").getType());
+        assertEquals("gw_start", gateway(reader, "gw_start").getId());
+        assertEquals(SimpleGateway.GatewayType.OR, gateway(reader, "gw_end").getType());
+        assertEquals("gw_end", gateway(reader, "gw_end").getId());
         // Al de inicio le llega el evento de inicio y sale hacia las primeras acciones;
         // al de fin le llegan las últimas y sale hacia el evento de fin
-        assertTrue(reader.getStartGateway().getIncomingActions().isEmpty());
-        assertEquals(Set.of("x", "y"), ids(reader.getStartGateway().getOutgoingActions()));
-        assertEquals(Set.of("x", "y"), ids(reader.getEndGateway().getIncomingActions()));
-        assertTrue(reader.getEndGateway().getOutgoingActions().isEmpty());
+        assertEquals(Set.of("startEvent"), ids(reader.getPredecessors(gateway(reader, "gw_start"))));
+        assertEquals(Set.of("x", "y"), ids(reader.getSuccessors(gateway(reader, "gw_start"))));
+        assertEquals(Set.of("x", "y"), ids(reader.getPredecessors(gateway(reader, "gw_end"))));
+        assertEquals(Set.of("endEvent"), ids(reader.getSuccessors(gateway(reader, "gw_end"))));
+    }
+
+    /** Flujos del proceso como "origen->destino", para comparar sin depender del orden */
+    private static Set<String> flows(R4PlanReader reader) {
+        return reader.getFlows().stream().map(Flow::toString).collect(Collectors.toSet());
+    }
+
+    @Test
+    void processGraphOfASequence() {
+        R4PlanReader reader = readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "Secuencia",
+                 "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before"}]},
+                            {"id": "b"}]}
+                """);
+        assertEquals(Set.of("startEvent->a", "a->b", "b->endEvent"), flows(reader));
+        // Los nodos, en orden topológico: inicio, a, b, fin
+        assertEquals(List.of("startEvent", "a", "b", "endEvent"),
+                reader.getNodes().stream().map(ProcessNode::getId).toList());
+    }
+
+    @Test
+    void processGraphOfAForkAndJoin() {
+        // a -> (b, c) -> d
+        R4PlanReader reader = readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "ForkJoin",
+                 "action": [{"id": "a"},
+                            {"id": "b", "relatedAction": [{"actionId": "a", "relationship": "after"}]},
+                            {"id": "c", "relatedAction": [{"actionId": "a", "relationship": "after"}]},
+                            {"id": "d", "relatedAction": [{"actionId": "b", "relationship": "after"},
+                                                          {"actionId": "c", "relationship": "after"}]}]}
+                """);
+        assertEquals(Set.of("startEvent->a", "a->gw_out_a", "gw_out_a->b", "gw_out_a->c",
+                "b->gw_in_d", "c->gw_in_d", "gw_in_d->d", "d->endEvent"), flows(reader));
+    }
+
+    @Test
+    void processGraphOfIndependentActions() {
+        R4PlanReader reader = readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "Independientes",
+                 "action": [{"id": "x"}, {"id": "y"}]}
+                """);
+        assertEquals(Set.of("startEvent->gw_start", "gw_start->x", "gw_start->y",
+                "x->gw_end", "y->gw_end", "gw_end->endEvent"), flows(reader));
+    }
+
+    @Test
+    void processGraphConnectsASplitDirectlyToAJoin() {
+        // a -> (b, c) y x -> c: el split de a va directamente al join de c
+        R4PlanReader reader = readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "SplitJoin",
+                 "action": [{"id": "a"}, {"id": "x"},
+                            {"id": "b", "relatedAction": [{"actionId": "a", "relationship": "after"}]},
+                            {"id": "c", "relatedAction": [{"actionId": "a", "relationship": "after"},
+                                                          {"actionId": "x", "relationship": "after"}]}]}
+                """);
+        assertEquals(Set.of("startEvent->gw_start", "gw_start->a", "gw_start->x",
+                "a->gw_out_a", "gw_out_a->b", "gw_out_a->gw_in_c", "x->gw_in_c", "gw_in_c->c",
+                "b->gw_end", "c->gw_end", "gw_end->endEvent"), flows(reader));
+    }
+
+    @Test
+    void planWithoutActionsGoesFromStartToEnd() {
+        R4PlanReader reader = new R4PlanReader("""
+                {"resourceType": "PlanDefinition", "name": "Vacio"}
+                """);
+        assertEquals(Set.of("startEvent->endEvent"), flows(reader));
+    }
+
+    @Test
+    void nodesCanBeFoundAndTraversed() {
+        // a -> (b, c)
+        R4PlanReader reader = readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "Recorrido",
+                 "action": [{"id": "a"},
+                            {"id": "b", "relatedAction": [{"actionId": "a", "relationship": "after"}]},
+                            {"id": "c", "relatedAction": [{"actionId": "a", "relationship": "after"}]}]}
+                """);
+        ProcessNode split = reader.getNode("gw_out_a");
+        assertTrue(split instanceof SimpleGateway);
+        assertEquals(List.of("a"), reader.getPredecessors(split).stream().map(ProcessNode::getId).toList());
+        assertEquals(Set.of("b", "c"),
+                reader.getSuccessors(split).stream().map(ProcessNode::getId).collect(Collectors.toSet()));
+        assertEquals(ProcessEvent.START, reader.getNode("startEvent"));
+        assertNull(reader.getNode("noExiste"));
+        assertThrows(IllegalArgumentException.class,
+                () -> reader.getSuccessors(new SimpleGateway("ajeno", SimpleGateway.GatewayType.AND)));
+    }
+
+    @Test
+    void rejectsActionWithTheIdOfAGateway() {
+        // La acción "gw_out_a" choca con el split de a, que va hacia b y hacia gw_out_a
+        assertThrows(InvalidPlanDefinitionException.class, () -> readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "ChoqueGateway",
+                 "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before"},
+                                                          {"actionId": "gw_out_a", "relationship": "before"}]},
+                            {"id": "b"}, {"id": "gw_out_a"}]}
+                """));
+    }
+
+    @Test
+    void rejectsActionWithTheIdOfAnEvent() {
+        assertThrows(InvalidPlanDefinitionException.class, () -> readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "ChoqueEvento",
+                 "action": [{"id": "startEvent"}]}
+                """));
     }
 
     @Test
@@ -208,7 +322,7 @@ class R4PlanReaderTest {
                  "action": [{"id": "a", "relatedAction": [{"actionId": "b", "relationship": "before"}]},
                             {"id": "b", "relatedAction": [{"actionId": "a", "relationship": "after"}]}]}
                 """);
-        assertEquals(Set.of("b"), ids(Set.copyOf(action(reader, "a").getNext())));
+        assertEquals(Set.of("b"), ids(reader.getSuccessors(action(reader, "a"))));
     }
 
     @Test
@@ -221,10 +335,10 @@ class R4PlanReaderTest {
                             {"id": "b", "relatedAction": [{"actionId": "c", "relationship": "before"}]},
                             {"id": "c"}]}
                 """);
-        assertNull(action(reader, "a").getOutGateway());
-        assertNull(action(reader, "c").getInGateway());
-        assertEquals(Set.of("b"), ids(Set.copyOf(action(reader, "a").getNext())));
-        assertEquals(Set.of("b"), ids(Set.copyOf(action(reader, "c").getPrevious())));
+        assertNull(gateway(reader, "gw_out_a"));
+        assertNull(gateway(reader, "gw_in_c"));
+        assertEquals(Set.of("b"), ids(reader.getSuccessors(action(reader, "a"))));
+        assertEquals(Set.of("b"), ids(reader.getPredecessors(action(reader, "c"))));
     }
 
     @Test
@@ -240,7 +354,7 @@ class R4PlanReaderTest {
                             {"id": "b", %s, "relatedAction": [{"actionId": "a", "relationship": "after"}]},
                             {"id": "a"}]}
                 """.formatted(CONDITION));
-        assertEquals(SimpleGateway.GatewayType.OR, action(reader, "d").getInGateway().getType());
+        assertEquals(SimpleGateway.GatewayType.OR, gateway(reader, "gw_in_d").getType());
     }
 
     @Test

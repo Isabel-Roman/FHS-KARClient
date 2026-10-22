@@ -358,6 +358,17 @@ class R4PlanReaderTest {
     }
 
     @Test
+    void generatedIdDoesNotCollideWithAnotherAction() {
+        // La primera acción no tiene id: se le genera "action_1", que es el id FHIR de la segunda
+        R4PlanReader reader = readerWithProcesses("""
+                {"resourceType": "PlanDefinition", "name": "IdGenerado",
+                 "action": [{"title": "Sin id"}, {"id": "action_1"}]}
+                """);
+        assertEquals(List.of("action_1", "action_1_2"),
+                reader.getActions().stream().map(ActionWrapper::getId).toList());
+    }
+
+    @Test
     void rejectsDuplicatedActionIds() {
         assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader("""
                 {"resourceType": "PlanDefinition", "name": "PlanDuplicado",

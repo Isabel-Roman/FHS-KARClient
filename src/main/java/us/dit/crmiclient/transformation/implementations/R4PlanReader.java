@@ -43,7 +43,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Lee un PlanDefinition FHIR R4 y construye los {@link ActionWrapper} de sus
- * acciones.
+ * acciones. Crea un grafo con esta información donde los nodos pueden ser: eventos, gateways o tareas (acciones)
  *
  * <h2>Identificadores de las acciones</h2>
  * Cada acción maneja dos identificadores distintos, que no deben confundirse:
@@ -51,49 +51,38 @@ import org.slf4j.LoggerFactory;
  * <h3>Id FHIR</h3>
  * <ul>
  * <li><b>Semántica:</b> identificador de la acción dentro del PlanDefinition.
- * Es la referencia
- * que usan unas acciones para relacionarse con otras.</li>
+ * Es la referencia que usan unas acciones para relacionarse con otras.</li>
  * <li><b>Origen:</b> el atributo {@code id} del elemento action en el recurso
  * ({@code action.getId()}). Lo escribe el autor del plan, es opcional y no
- * tiene restricción de
- * formato más allá de la de FHIR (puede empezar por dígito, contener puntos o
+ * tiene restricción de formato más allá de la de FHIR (puede empezar por dígito, contener puntos o
  * guiones, etc.).</li>
  * <li><b>Uso:</b> resolver los {@code relatedAction.actionId}. Es la clave del
  * índice temporal que crea {@link #createActions()} y usa {@code shortActions} para
  * construir el grafo de dependencias. Debe ser único en el plan: si se repite, las
- * referencias serían
- * ambiguas y el plan se rechaza. Una acción sin id FHIR no puede ser
+ * referencias serían ambiguas y el plan se rechaza. Una acción sin id FHIR no puede ser
  * referenciada por otras.
- * No se guarda en el wrapper: se consulta con
- * {@code wrapper.getAction().getId()}.</li>
+ * No se guarda directamente en el wrapper, que es de donde se va a sacar la info para bpmn: 
+ * se consulta con {@code wrapper.getAction().getId()}.</li>
  * </ul>
  *
  * <h3>Id BPMN</h3>
  * <ul>
- * <li><b>Semántica:</b> identificador del elemento BPMN (tarea) que
- * representará la acción en el
+ * <li><b>Semántica:</b> identificador del elemento BPMN (tarea) que representará la acción en el
  * proceso generado.</li>
- * <li><b>Origen:</b> se calcula a partir del id FHIR con
- * {@link #toUniqueBpmnId}, porque los ids
+ * <li><b>Origen:</b> se calcula a partir del id FHIR con {@link #toUniqueBpmnId}, porque los ids
  * BPMN son NCName de XML (deben empezar por letra o '_' y no admiten espacios
- * ni la mayoría de
- * símbolos). Si la acción no tiene id FHIR se genera {@code action_N}, con N su
- * posición en el
- * plan. Si el saneado hace coincidir dos ids, se añade un sufijo {@code _2},
+ * ni la mayoría de símbolos). Si la acción no tiene id FHIR se genera {@code action_N}, con N su
+ * posición en el plan. Si el saneado hace coincidir dos ids, se añade un sufijo {@code _2},
  * {@code _3}...</li>
  * <li><b>Uso:</b> es el que guarda {@code wrapper.getId()}, y es el que debe
- * usarse al construir el
- * BPMN (ids de tareas, sequence flows, gateways). Es único dentro del
- * proceso.</li>
+ * usarse al construir el BPMN (ids de tareas, sequence flows, gateways). Es único dentro del proceso.</li>
  * </ul>
  *
  * En los casos habituales ambos coinciden; solo difieren cuando el id FHIR no
- * es un NCName válido,
- * cuando el saneado provoca colisiones o cuando la acción no tiene id FHIR.
+ * es un NCName válido, cuando el saneado provoca colisiones o cuando la acción no tiene id FHIR.
  * <p>
  * El id del propio proceso ({@link #getId()}) sigue la misma idea: se obtiene
- * del id del
- * PlanDefinition (o de su name) y se sanea con {@link #toBpmnId(String)}.
+ * del id del PlanDefinition (o de su name) y se sanea con {@link #toBpmnId(String)}.
  */
 public class R4PlanReader implements PlanReader {
     private static final Logger logger = LoggerFactory.getLogger(R4PlanReader.class);
@@ -152,35 +141,28 @@ public class R4PlanReader implements PlanReader {
      */
     private final Map<String, ProcessNode> nodesById = new HashMap<>();
     /**
-     * Split (gateway de salida) de las acciones que lo necesitan; solo para
+     * Splits (gateways de salida) de las acciones que lo necesitan; solo para
      * construir processGraph
      */
     private final Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> splits = new HashMap<>();
     /**
-     * Join (gateway de entrada) de las acciones que lo necesitan; solo para
+     * Joins (gateways de entrada) de las acciones que lo necesitan; solo para
      * construir processGraph
      */
     private final Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> joins = new HashMap<>();
-
+  
     /**
-     * Reader sin acceso a servidor: no resuelve ningún recurso, así que solo sirve
-     * para
-     * planes sin acciones (un plan con acciones se rechaza).
-     */
-    public R4PlanReader(String rawPlanDefinition) {
-        this(rawPlanDefinition, null);
-    }
-
-    /**
-     * @param resolver obtiene los PlanDefinition referenciados por las acciones
-     *                 (del servidor CRMI)
+     * El constructor necesita el plandefinition en formato crudo json y el ResourceResolver para contactar con Fhir
+     * @param rawPlanDefinition planDefinition en json crudo
+     * @param resolver permite acceso al servidor CRMI, obtiene los PlanDefinition referenciados por las acciones y cualquier otro recurso necesario
+     *       
      */
     public R4PlanReader(String rawPlanDefinition, ResourceResolver resolver) {
         this.resolver = resolver;
         this.plan = FhirContext.forR4()
                 .newJsonParser()
                 .parseResource(PlanDefinition.class, rawPlanDefinition);
-        setId();
+        setPlanId();
 
         // El índice por id FHIR solo hace falta para resolver los relatedAction: es local y se
         // descarta en cuanto se ha construido el grafo de dependencias
@@ -212,7 +194,7 @@ public class R4PlanReader implements PlanReader {
      */
     private Map<String, ActionWrapper<PlanDefinitionActionComponent>> createActions() {
         Map<String, ActionWrapper<PlanDefinitionActionComponent>> actionsByFhirId = new HashMap<>();
-        // Conjunto de identificadores bpmn existentes, no pueden estar repetidos
+        // Conjunto de identificadores bpmn existentes, artefacto para asegurar que no están repetidos
         Set<String> bpmnIds = new HashSet<>();
         int index = 0;
         // Recorre todas las acciones incluidas en el planDefinition
@@ -236,11 +218,12 @@ public class R4PlanReader implements PlanReader {
                     throw new InvalidPlanDefinitionException("Id de acción duplicado en el PlanDefinition: " + fhirId);
                 }
                 // Limpieza del id para no violar las reglas de bpmn y asegurar qu eno hay
-                // duplicados
+                // duplicados, si es necesario modifica el fhirId (lo devuelve modificado o igual)
+                //Añade a bpmnIds el bpmnId creado
                 bpmnId = toUniqueBpmnId(fhirId, bpmnIds);
             }      
             // El id se fija al crear el wrapper: es su identidad como nodo del grafo y no
-            // puede cambiar
+            // puede cambiar, tal y como se ha construido se asegura que no está replicado
             ActionWrapper<PlanDefinitionActionComponent> wrapper = new ActionWrapper<>(action, bpmnId);
             if (fhirId != null && !fhirId.isBlank()) {
                 actionsByFhirId.put(fhirId, wrapper);
@@ -330,66 +313,63 @@ public class R4PlanReader implements PlanReader {
      * <ul>
      * <li>Inicio → gateway de inicio (si hay) → primeras acciones.</li>
      * <li>Cada relación A→B del grafo de dependencias es un flujo desde la salida
-     * de A (su
-     * split, si tiene) hasta la entrada de B (su join, si tiene). Si A tiene split,
-     * A → split;
-     * si B tiene join, join → B.</li>
+     * de A (su split, si tiene) hasta la entrada de B (su join, si tiene).
+     *      Si A tiene split, A → split;
+     *      Si B tiene join, join → B.</li>
      * <li>Últimas acciones → gateway de fin (si hay) → fin.</li>
      * <li>Un plan sin acciones va directamente del inicio al fin.</li>
      * </ul>
      * Todos los nodos deben tener id distinto, porque es el id del elemento BPMN:
-     * si una acción
-     * tiene el id de un gateway o de un evento (p.ej. una acción "gw_out_a" o
-     * "startEvent"), el
-     * plan se rechaza.
+     * si una acción tiene el id de un gateway o de un evento (p.ej. una acción "gw_out_a" o
+     * "startEvent"), el plan se rechaza.
      *
      * @param boundary primeras y últimas acciones del plan, calculadas por solveGateways
      */
     private void buildProcessGraph(PlanBoundary boundary) {
         List<ActionWrapper<PlanDefinitionActionComponent>> firsts = boundary.firsts();
         List<ActionWrapper<PlanDefinitionActionComponent>> lasts = boundary.lasts();
-        addNode(ProcessEvent.START);
-        actions.forEach(this::addNode);
-        joins.values().forEach(this::addNode);
-        splits.values().forEach(this::addNode);
+        addNode2Graph(ProcessEvent.START);
+        actions.forEach(this::addNode2Graph);
+        joins.values().forEach(this::addNode2Graph);
+        splits.values().forEach(this::addNode2Graph);
         if (startGateway != null) {
-            addNode(startGateway);
+            addNode2Graph(startGateway);
         }
         if (endGateway != null) {
-            addNode(endGateway);
+            addNode2Graph(endGateway);
         }
-        addNode(ProcessEvent.END);
+        addNode2Graph(ProcessEvent.END);
 
         // Inicio
         if (startGateway != null) {
-            addFlow(ProcessEvent.START, startGateway);
-            firsts.forEach(first -> addFlow(startGateway, entry(first)));
+            addFlow2Graph(ProcessEvent.START, startGateway);
+            firsts.forEach(first -> addFlow2Graph(startGateway, entry(first)));
         } else if (!firsts.isEmpty()) {
             // Sin gateway de inicio hay una única primera acción
-            addFlow(ProcessEvent.START, entry(firsts.get(0)));
+            addFlow2Graph(ProcessEvent.START, entry(firsts.get(0)));
         }
         // Acciones y gateways de cada acción
         for (ActionWrapper<PlanDefinitionActionComponent> action : actions) {
             if (joins.containsKey(action)) {
-                addFlow(joins.get(action), action);
+                addFlow2Graph(joins.get(action), action);
             }
             if (splits.containsKey(action)) {
-                addFlow(action, splits.get(action));
+                addFlow2Graph(action, splits.get(action));
             }
             for (ActionWrapper<PlanDefinitionActionComponent> next : successors(action)) {
-                addFlow(exit(action), entry(next));
+                addFlow2Graph(exit(action), entry(next));
             }
         }
         // Fin
         if (endGateway != null) {
-            lasts.forEach(last -> addFlow(exit(last), endGateway));
-            addFlow(endGateway, ProcessEvent.END);
+            lasts.forEach(last -> addFlow2Graph(exit(last), endGateway));
+            addFlow2Graph(endGateway, ProcessEvent.END);
         } else if (!lasts.isEmpty()) {
             // Sin gateway de fin hay una única última acción
-            addFlow(exit(lasts.get(0)), ProcessEvent.END);
+            addFlow2Graph(exit(lasts.get(0)), ProcessEvent.END);
         }
         if (actions.isEmpty()) {
-            addFlow(ProcessEvent.START, ProcessEvent.END);
+            addFlow2Graph(ProcessEvent.START, ProcessEvent.END);
         }
         logger.debug("Grafo del proceso: {} nodos, flujos {}", processGraph.vertexSet().size(), getFlows());
     }
@@ -397,8 +377,9 @@ public class R4PlanReader implements PlanReader {
     /**
      * Añade un nodo al grafo del proceso, rechazando el plan si su id ya lo usa
      * otro nodo
+     * Los ProcessNode pueden ser: simplegateways, processevent o actionwrapper
      */
-    private void addNode(ProcessNode node) {
+    private void addNode2Graph(ProcessNode node) {
         ProcessNode previous = nodesById.putIfAbsent(node.getId(), node);
         if (previous != null && !previous.equals(node)) {
             throw new InvalidPlanDefinitionException("El id " + node.getId() + " lo usan a la vez " + previous
@@ -408,7 +389,7 @@ public class R4PlanReader implements PlanReader {
     }
 
     /** Añade un flujo al grafo del proceso; si ya existe no hace nada */
-    private void addFlow(ProcessNode source, ProcessNode target) {
+    private void addFlow2Graph(ProcessNode source, ProcessNode target) {
         if (!processGraph.containsEdge(source, target)) {
             processGraph.addEdge(source, target, new Flow(source, target));
         }
@@ -880,7 +861,7 @@ public class R4PlanReader implements PlanReader {
      * plan nuevo que aún no está en el servidor) se usa su name, y si tampoco tiene name se
      * genera uno. Se sanea como id BPMN, porque un id FHIR o un name pueden no ser NCName válidos.
      */
-    private void setId() {
+    private void setPlanId() {
         if (plan.getIdElement().hasIdPart()) {
             // getIdPart descarta el prefijo "PlanDefinition/" y la versión.
             // Un id FHIR puede empezar por dígito, que no es un NCName válido

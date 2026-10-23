@@ -1,15 +1,5 @@
 package us.dit.crmiclient.transformation.implementations;
 
-import us.dit.crmiclient.model.ActionWrapper;
-import us.dit.crmiclient.model.Flow;
-import us.dit.crmiclient.model.ParameterWrapper;
-import us.dit.crmiclient.model.ProcessEvent;
-import us.dit.crmiclient.model.ProcessNode;
-import us.dit.crmiclient.model.SimpleGateway;
-import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
-import us.dit.crmiclient.transformation.PlanReader;
-import us.dit.crmiclient.services.ResourceResolver;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -23,7 +13,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
-import ca.uhn.fhir.context.FhirContext;
 import org.hl7.fhir.r4.model.CanonicalType;
 import org.hl7.fhir.r4.model.Library;
 import org.hl7.fhir.r4.model.ParameterDefinition;
@@ -33,13 +22,23 @@ import org.hl7.fhir.r4.model.PlanDefinition.ActionRelationshipType;
 import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionComponent;
 import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionDynamicValueComponent;
 import org.hl7.fhir.r4.model.PlanDefinition.PlanDefinitionActionRelatedActionComponent;
-
 import org.jgrapht.Graphs;
 import org.jgrapht.alg.TransitiveReduction;
 import org.jgrapht.graph.DefaultEdge;
 import org.jgrapht.graph.DirectedAcyclicGraph;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import ca.uhn.fhir.context.FhirContext;
+import us.dit.crmiclient.model.ActionWrapper;
+import us.dit.crmiclient.model.Flow;
+import us.dit.crmiclient.model.ParameterWrapper;
+import us.dit.crmiclient.model.ProcessEvent;
+import us.dit.crmiclient.model.ProcessNode;
+import us.dit.crmiclient.model.SimpleGateway;
+import us.dit.crmiclient.services.ResourceResolver;
+import us.dit.crmiclient.transformation.InvalidPlanDefinitionException;
+import us.dit.crmiclient.transformation.PlanReader;
 
 /**
  * Lee un PlanDefinition FHIR R4 y construye los {@link ActionWrapper} de sus
@@ -115,14 +114,14 @@ public class R4PlanReader implements PlanReader {
         /**
          * Nodo por el que se entra a una acción: su join si tiene, o la propia acción
          */
-        ProcessNode entry(ActionWrapper<PlanDefinitionActionComponent> action) {
+        ProcessNode getActionEntryNode(ActionWrapper<PlanDefinitionActionComponent> action) {
             return joins.containsKey(action) ? joins.get(action) : action;
         }
 
         /**
          * Nodo por el que se sale de una acción: su split si tiene, o la propia acción
          */
-        ProcessNode exit(ActionWrapper<PlanDefinitionActionComponent> action) {
+        ProcessNode getActionExitNode(ActionWrapper<PlanDefinitionActionComponent> action) {
             return splits.containsKey(action) ? splits.get(action) : action;
         }
     }
@@ -367,33 +366,41 @@ public class R4PlanReader implements PlanReader {
             //añado el enlace entre el envento de inicio y el gateway de inicio
             addFlow2Graph(ProcessEvent.START, startGateway);
             //añado enlaces entre el gateway de inicio y cada una de las primeras acciones
-            firsts.forEach(first -> addFlow2Graph(startGateway, gateways.entry(first)));
+            firsts.forEach(first -> addFlow2Graph(startGateway, gateways.getActionEntryNode(first)));
         } else if (!firsts.isEmpty()) {
             // Sin gateway de inicio miro si hay una acción en firsts (sólo puede haber una)
             // Si hay, la uno al evento de inicio
             // Si no hay, no hay acciones en el plan, el evento de inicio por ahora va a quedar desconectado, se trata más adelante
-            addFlow2Graph(ProcessEvent.START, gateways.entry(firsts.get(0)));
+            addFlow2Graph(ProcessEvent.START, gateways.getActionEntryNode(firsts.get(0)));
         }
-        // Añado enlaces entre los join de entrada y los splits de salida de cada acción
+        // Enlazo los join de entrada y los splits de salida de cada acción
         for (ActionWrapper<PlanDefinitionActionComponent> action : actions) {
+            //Enlazo join de entrada a la acción
             if (joins.containsKey(action)) {
                 addFlow2Graph(joins.get(action), action);
             }
+            //Enlazo la acción al split de salida
             if (splits.containsKey(action)) {
                 addFlow2Graph(action, splits.get(action));
             }
+            //Para cada acción sucesora:
+            // enlazo la acción actual o el split de la acción actual a la acción de la sucesora o su join, si lo tiene
             for (ActionWrapper<PlanDefinitionActionComponent> next : successors(action)) {
-                addFlow2Graph(gateways.exit(action), gateways.entry(next));
+                addFlow2Graph(gateways.getActionExitNode(action), gateways.getActionEntryNode(next));
             }
         }
-        // Fin
+        //Una vez añadidos todos los enlaces entre acciones sólo queda enlazar las últimas acciones al gateway final o al evento de fin
+        // Si hay gateway de fin enlazo cada salida de las acciones sin socesores a este gateway y a continuación el gateway con el evento de fin
+        // Si no hay gateway de fin, enlazo la salida de la última acción directamente al evento de fin
         if (endGateway != null) {
-            lasts.forEach(last -> addFlow2Graph(gateways.exit(last), endGateway));
+            lasts.forEach(last -> addFlow2Graph(gateways.getActionExitNode(last), endGateway));
             addFlow2Graph(endGateway, ProcessEvent.END);
         } else if (!lasts.isEmpty()) {
             // Sin gateway de fin hay una única última acción
-            addFlow2Graph(gateways.exit(lasts.get(0)), ProcessEvent.END);
+            addFlow2Graph(gateways.getActionExitNode(lasts.get(0)), ProcessEvent.END);
         }
+        //Si no había acciones enlazo directamente los eventos de entrada y salida
+        //No se habrán generado gateways de entrada y salida!!!
         if (actions.isEmpty()) {
             addFlow2Graph(ProcessEvent.START, ProcessEvent.END);
         }

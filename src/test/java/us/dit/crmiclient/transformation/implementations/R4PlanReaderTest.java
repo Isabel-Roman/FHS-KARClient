@@ -35,7 +35,7 @@ class R4PlanReaderTest {
     void getIdUsesPlanIdWithoutPrefix() {
         R4PlanReader reader = new R4PlanReader("""
                 {"resourceType": "PlanDefinition", "id": "plan-sencillo", "name": "PlanSencillo"}
-                """);
+                """, new InMemoryR4Resolver());
         assertEquals("plan-sencillo", reader.getId());
     }
 
@@ -43,7 +43,7 @@ class R4PlanReaderTest {
     void getIdUsesNameWhenPlanHasNoId() {
         R4PlanReader reader = new R4PlanReader("""
                 {"resourceType": "PlanDefinition", "name": "PlanSencillo"}
-                """);
+                """, new InMemoryR4Resolver());
         assertEquals("PlanSencillo", reader.getId());
     }
 
@@ -51,7 +51,7 @@ class R4PlanReaderTest {
     void getIdTurnsNameIntoValidBpmnId() {
         R4PlanReader reader = new R4PlanReader("""
                 {"resourceType": "PlanDefinition", "name": "1 plan con espacios"}
-                """);
+                """, new InMemoryR4Resolver());
         assertEquals("_1_plan_con_espacios", reader.getId());
     }
 
@@ -59,7 +59,7 @@ class R4PlanReaderTest {
     void getIdGeneratesStableIdWhenPlanHasNoIdNorName() {
         R4PlanReader reader = new R4PlanReader("""
                 {"resourceType": "PlanDefinition", "status": "draft"}
-                """);
+                """, new InMemoryR4Resolver());
         String id = reader.getId();
         assertTrue(id.startsWith("plan-"));
         assertEquals(id, reader.getId());
@@ -70,7 +70,7 @@ class R4PlanReaderTest {
         assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader("""
                 {"resourceType": "PlanDefinition", "name": "PlanAnidado",
                  "action": [{"id": "grupo", "action": [{"id": "hija"}]}]}
-                """));
+                """, new InMemoryR4Resolver()));
     }
 
     /** Condición applicability para meter en una acción del JSON */
@@ -250,7 +250,7 @@ class R4PlanReaderTest {
     void planWithoutActionsGoesFromStartToEnd() {
         R4PlanReader reader = new R4PlanReader("""
                 {"resourceType": "PlanDefinition", "name": "Vacio"}
-                """);
+                """, new InMemoryR4Resolver());
         assertEquals(Set.of("startEvent->endEvent"), flows(reader));
     }
 
@@ -373,7 +373,7 @@ class R4PlanReaderTest {
         assertThrows(InvalidPlanDefinitionException.class, () -> new R4PlanReader("""
                 {"resourceType": "PlanDefinition", "name": "PlanDuplicado",
                  "action": [{"id": "a"}, {"id": "a"}]}
-                """));
+                """, new InMemoryR4Resolver()));
     }
 
     private static final String SUBPLAN = "http://ejemplo/PlanDefinition/notificar";

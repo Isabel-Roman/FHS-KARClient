@@ -90,28 +90,47 @@ public class R4PlanReader implements PlanReader {
     private String processId;
 
     /**
-     * Primeras acciones del plan (sin anteriores) y últimas (sin siguientes), 
-     * en el orden del documento. Las calcula una vez solveGateways y las 
-     * usa buildProcessGraph; 
-     * no se guardan en el reader porque después no hacen falta.
+     * Gateways del proceso y primeras y últimas acciones del plan. Los calcula una vez
+     * solveGateways y los usa buildProcessGraph; no se guardan en el reader porque, una vez
+     * construido processGraph, ya están en él y no hacen falta.
+     * Los mapas son LinkedHashMap para que los gateways se añadan al grafo siempre en el mismo
+     * orden (el de las acciones en el documento).
+     *
+     * @param firsts       primeras acciones del plan (sin anteriores), en el orden del documento
+     * @param lasts        últimas acciones del plan (sin siguientes), en el orden del documento
+     * @param splits       split (gateway de salida) de cada acción que lo necesita
+     * @param joins        join (gateway de entrada) de cada acción que lo necesita
+     * @param startGateway split tras el evento de inicio hacia las primeras acciones; null si
+     *                     no hace falta
+     * @param endGateway   join de las últimas acciones antes del evento de fin; null si no hace
+     *                     falta
      */
-    private record PlanBoundary(List<ActionWrapper<PlanDefinitionActionComponent>> firsts,
-            List<ActionWrapper<PlanDefinitionActionComponent>> lasts) {
+    private record PlanGateways(List<ActionWrapper<PlanDefinitionActionComponent>> firsts,
+            List<ActionWrapper<PlanDefinitionActionComponent>> lasts,
+            Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> splits,
+            Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> joins,
+            SimpleGateway startGateway,
+            SimpleGateway endGateway) {
+
+        /**
+         * Nodo por el que se entra a una acción: su join si tiene, o la propia acción
+         */
+        ProcessNode entry(ActionWrapper<PlanDefinitionActionComponent> action) {
+            return joins.containsKey(action) ? joins.get(action) : action;
+        }
+
+        /**
+         * Nodo por el que se sale de una acción: su split si tiene, o la propia acción
+         */
+        ProcessNode exit(ActionWrapper<PlanDefinitionActionComponent> action) {
+            return splits.containsKey(action) ? splits.get(action) : action;
+        }
     }
 
     /**
      * Todas las acciones del plan, en el orden del documento. Es la única colección de acciones del reader, el id de cada acción es único por diseño del código.
      */
     private final List<ActionWrapper<PlanDefinitionActionComponent>> actions = new ArrayList<>();
-    /**
-     * Split tras el evento de inicio hacia las primeras acciones; null si no hace
-     * falta
-     */
-    private SimpleGateway startGateway;
-    /**
-     * Join de las últimas acciones antes del evento de fin; null si no hace falta
-     */
-    private SimpleGateway endGateway;
 
     /** Obtiene del servidor CRMI los PlanDefinition de las acciones y cualquier información adicional necesaria */
     private final ResourceResolver resolver;
@@ -140,17 +159,7 @@ public class R4PlanReader implements PlanReader {
      * repetidos
      */
     private final Map<String, ProcessNode> nodesById = new HashMap<>();
-    /**
-     * Splits (gateways de salida) de las acciones que lo necesitan; solo para
-     * construir processGraph
-     */
-    private final Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> splits = new HashMap<>();
-    /**
-     * Joins (gateways de entrada) de las acciones que lo necesitan; solo para
-     * construir processGraph
-     */
-    private final Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> joins = new HashMap<>();
-  
+
     /**
      * El constructor necesita el plandefinition en formato crudo json y el ResourceResolver para contactar con Fhir
      * @param rawPlanDefinition planDefinition en json crudo
@@ -168,9 +177,10 @@ public class R4PlanReader implements PlanReader {
         // descarta en cuanto se ha construido el grafo de dependencias
         Map<String, ActionWrapper<PlanDefinitionActionComponent>> actionsByFhirId = createActions();
         shortActions(actionsByFhirId);
-        // Las primeras y últimas acciones se calculan una sola vez y solo se usan aquí
-        PlanBoundary boundary = solveGateways();
-        buildProcessGraph(boundary);
+        // Los gateways y las primeras y últimas acciones se calculan una sola vez y solo se
+        // usan para construir el grafo del proceso
+        PlanGateways gateways = solveGateways();
+        buildProcessGraph(gateways);
         solveSubprocessesCalls();
         logger.debug("PlanDefinition leído: id={}, name={}", plan.getId(), plan.getName());
     }
@@ -238,7 +248,7 @@ public class R4PlanReader implements PlanReader {
 
     /**
      * Calcula los gateways del proceso, según la información de las acciones del plan: el split y
-     * el join de cada acción que los necesita (en splits y joins) y los de inicio y fin.
+     * el join de cada acción que los necesita y los de inicio y fin.
      * Por ahora solo se generan gateways AND y OR (no XOR: no se puede saber si las
      * condiciones de
      * las ramas son excluyentes, y OR es correcto en ambos casos).
@@ -253,14 +263,13 @@ public class R4PlanReader implements PlanReader {
      * <li>Las primeras y últimas acciones del plan no tienen un wrapper anterior o
      * siguiente donde
      * colgar el gateway: el split tras el evento de inicio y el join antes del de
-     * fin se guardan
-     * en el propio reader (startGateway y endGateway).</li>
+     * fin van aparte (startGateway y endGateway).</li>
      * </ul>
      *
-     * @return primeras y últimas acciones del plan, que se calculan aquí de paso y necesita
-     *         buildProcessGraph
+     * @return gateways del proceso y primeras y últimas acciones del plan, que se calculan
+     *         aquí de paso; los necesita buildProcessGraph
      */
-    private PlanBoundary solveGateways() {
+    private PlanGateways solveGateways() {
         // Conjunto de acciones que podrían no ejecutarse, porque tienen condición o
         // solo se llega a ellas a través de acciones con condición
         Set<ActionWrapper<PlanDefinitionActionComponent>> mayNotRun = findActionsThatMayNotRun();
@@ -268,6 +277,8 @@ public class R4PlanReader implements PlanReader {
         List<ActionWrapper<PlanDefinitionActionComponent>> firsts = new ArrayList<>();
         // Lista de acciones que no tienen siguientes para el gateway de fin
         List<ActionWrapper<PlanDefinitionActionComponent>> lasts = new ArrayList<>();
+        Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> splits = new LinkedHashMap<>();
+        Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> joins = new LinkedHashMap<>();
         // Se recorren en el orden del documento, para que firsts y lasts lo conserven
         for (ActionWrapper<PlanDefinitionActionComponent> wrapper : actions) {
             Set<ActionWrapper<PlanDefinitionActionComponent>> next = successors(wrapper);
@@ -298,13 +309,15 @@ public class R4PlanReader implements PlanReader {
         // Analizo el split de entrada mirando las primeras acciones. Las primeras
         // acciones son las de salida del evento de inicio...
         SimpleGateway.GatewayType startSplit = solveSplitType(firsts);
-        startGateway = startSplit == null ? null : new SimpleGateway("gw_start", startSplit);
+        SimpleGateway startGateway = startSplit == null ? null : new SimpleGateway("gw_start", startSplit);
         // Analizo el join de salida mirando las últimas acciones. Las últimas acciones
         // son las de entrada para el evento de fin...
-        endGateway = lasts.size() > 1 ? new SimpleGateway("gw_end", solveJoinType(lasts, mayNotRun)) : null;
+        SimpleGateway endGateway = lasts.size() > 1
+                ? new SimpleGateway("gw_end", solveJoinType(lasts, mayNotRun))
+                : null;
         logger.debug("Gateways del plan: inicio={}, fin={}",
                 startGateway == null ? "-" : startGateway.getType(), endGateway == null ? "-" : endGateway.getType());
-        return new PlanBoundary(firsts, lasts);
+        return new PlanGateways(firsts, lasts, splits, joins, startGateway, endGateway);
     }
 
     /**
@@ -323,11 +336,20 @@ public class R4PlanReader implements PlanReader {
      * si una acción tiene el id de un gateway o de un evento (p.ej. una acción "gw_out_a" o
      * "startEvent"), el plan se rechaza.
      *
-     * @param boundary primeras y últimas acciones del plan, calculadas por solveGateways
+     * @param gateways gateways del proceso y primeras y últimas acciones del plan, calculados
+     *                 por solveGateways
      */
-    private void buildProcessGraph(PlanBoundary boundary) {
-        List<ActionWrapper<PlanDefinitionActionComponent>> firsts = boundary.firsts();
-        List<ActionWrapper<PlanDefinitionActionComponent>> lasts = boundary.lasts();
+    private void buildProcessGraph(PlanGateways gateways) {
+        List<ActionWrapper<PlanDefinitionActionComponent>> firsts = gateways.firsts();
+        List<ActionWrapper<PlanDefinitionActionComponent>> lasts = gateways.lasts();
+        Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> splits = gateways.splits();
+        Map<ActionWrapper<PlanDefinitionActionComponent>, SimpleGateway> joins = gateways.joins();
+        SimpleGateway startGateway = gateways.startGateway();
+        SimpleGateway endGateway = gateways.endGateway();
+        //añado todos los nodos (vértices) al grafo del proceso: 
+        // eventos de inicio y fin
+        // gateways de entrada y salida
+        // joins, splits  acciones
         addNode2Graph(ProcessEvent.START);
         actions.forEach(this::addNode2Graph);
         joins.values().forEach(this::addNode2Graph);
@@ -339,16 +361,20 @@ public class R4PlanReader implements PlanReader {
             addNode2Graph(endGateway);
         }
         addNode2Graph(ProcessEvent.END);
-
-        // Inicio
+        //Añado las conexiones
+        // Del evento inicio al gateway de inicio (si hay) y de éste a las primeras acciones (puede ser una solo, si hay join porque en la acción haya condición)
         if (startGateway != null) {
+            //añado el enlace entre el envento de inicio y el gateway de inicio
             addFlow2Graph(ProcessEvent.START, startGateway);
-            firsts.forEach(first -> addFlow2Graph(startGateway, entry(first)));
+            //añado enlaces entre el gateway de inicio y cada una de las primeras acciones
+            firsts.forEach(first -> addFlow2Graph(startGateway, gateways.entry(first)));
         } else if (!firsts.isEmpty()) {
-            // Sin gateway de inicio hay una única primera acción
-            addFlow2Graph(ProcessEvent.START, entry(firsts.get(0)));
+            // Sin gateway de inicio miro si hay una acción en firsts (sólo puede haber una)
+            // Si hay, la uno al evento de inicio
+            // Si no hay, no hay acciones en el plan, el evento de inicio por ahora va a quedar desconectado, se trata más adelante
+            addFlow2Graph(ProcessEvent.START, gateways.entry(firsts.get(0)));
         }
-        // Acciones y gateways de cada acción
+        // Añado enlaces entre los join de entrada y los splits de salida de cada acción
         for (ActionWrapper<PlanDefinitionActionComponent> action : actions) {
             if (joins.containsKey(action)) {
                 addFlow2Graph(joins.get(action), action);
@@ -357,16 +383,16 @@ public class R4PlanReader implements PlanReader {
                 addFlow2Graph(action, splits.get(action));
             }
             for (ActionWrapper<PlanDefinitionActionComponent> next : successors(action)) {
-                addFlow2Graph(exit(action), entry(next));
+                addFlow2Graph(gateways.exit(action), gateways.entry(next));
             }
         }
         // Fin
         if (endGateway != null) {
-            lasts.forEach(last -> addFlow2Graph(exit(last), endGateway));
+            lasts.forEach(last -> addFlow2Graph(gateways.exit(last), endGateway));
             addFlow2Graph(endGateway, ProcessEvent.END);
         } else if (!lasts.isEmpty()) {
             // Sin gateway de fin hay una única última acción
-            addFlow2Graph(exit(lasts.get(0)), ProcessEvent.END);
+            addFlow2Graph(gateways.exit(lasts.get(0)), ProcessEvent.END);
         }
         if (actions.isEmpty()) {
             addFlow2Graph(ProcessEvent.START, ProcessEvent.END);
@@ -393,20 +419,6 @@ public class R4PlanReader implements PlanReader {
         if (!processGraph.containsEdge(source, target)) {
             processGraph.addEdge(source, target, new Flow(source, target));
         }
-    }
-
-    /**
-     * Nodo por el que se entra a una acción: su join si tiene, o la propia acción
-     */
-    private ProcessNode entry(ActionWrapper<PlanDefinitionActionComponent> action) {
-        return joins.containsKey(action) ? joins.get(action) : action;
-    }
-
-    /**
-     * Nodo por el que se sale de una acción: su split si tiene, o la propia acción
-     */
-    private ProcessNode exit(ActionWrapper<PlanDefinitionActionComponent> action) {
-        return splits.containsKey(action) ? splits.get(action) : action;
     }
 
     /**
